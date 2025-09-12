@@ -37,19 +37,23 @@
           <span class="material-symbols-outlined">dashboard</span>
           <span class="nav-text">Dashboard</span>
         </button>
-        <button class="nav-item" data-nav="input-data">
-          <span class="material-symbols-outlined">edit_document</span>
-          <span class="nav-text">Input Data</span>
+        <button class="nav-item" data-nav="pemasukan-pinjaman" data-role="Admin,Owner">
+            <span class="material-symbols-outlined">account_balance_wallet</span>
+            <span class="nav-text">Pemasukan & Pinjaman</span>
         </button>
-        <button class="nav-item" data-nav="absensi">
+        <button class="nav-item" data-nav="alokasi-anggaran" data-role="Admin,Owner">
+            <span class="material-symbols-outlined">inventory</span>
+            <span class="nav-text">Alokasi & Anggaran</span>
+        </button>
+        <button class="nav-item" data-nav="input-data" data-role="Editor,Admin,Owner">
+          <span class="material-symbols-outlined">edit_document</span>
+          <span class="nav-text">Input Pengeluaran</span>
+        </button>
+        <button class="nav-item" data-nav="absensi" data-role="Editor,Admin,Owner">
           <span class="material-symbols-outlined">group</span>
           <span class="nav-text">Absensi</span>
         </button>
-        <button class="nav-item" data-nav="stok-material">
-          <span class="material-symbols-outlined">inventory_2</span>
-          <span class="nav-text">Stok Material</span>
-        </button>
-        <button class="nav-item" data-nav="tagihan">
+        <button class="nav-item" data-nav="tagihan" data-role="Editor,Admin,Owner,Viewer">
           <span class="material-symbols-outlined">receipt_long</span>
           <span class="nav-text">Tagihan</span>
         </button>
@@ -101,7 +105,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="user-profile-wrapper">
             <button id="user-profile-btn" class="user-profile-btn" aria-label="Profil Pengguna">
               <img id="user-avatar" src="https://placehold.co/40x40/e2e8f0/64748b?text=G" alt="Avatar" />
@@ -135,12 +139,10 @@
     </div>
   </div>
   
-  <button id="fab" class="fab hidden" aria-label="Tambah Data" data-role="Editor,Admin,Owner">
-    <span class="material-symbols-outlined">add</span>
-  </button>
-
+  <!-- Scrim (Overlay untuk sidebar mobile) -->
   <div id="scrim" class="scrim"></div>
 
+  <!-- Popup/Toast Notifikasi -->
   <div id="popup-container" class="popup-container">
     <div class="popup-content">
       <span id="popup-icon" class="material-symbols-outlined"></span>
@@ -148,8 +150,10 @@
     </div>
   </div>
 
+  <!-- Container untuk Modal Dinamis -->
   <div id="modal-container"></div>
   
+  <!-- Firebase v9+ modular sebagai module -->
   <script type="module" src="script.js"></script>
 </body>
 </html>
