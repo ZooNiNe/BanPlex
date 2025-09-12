@@ -13,6 +13,7 @@ import {
     doc,
     getDoc,
     setDoc,
+    updateDoc,
     serverTimestamp,
     onSnapshot,
     query,
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
       appId: "1:192219628345:web:f1caa28230a5803e681ee8"
     };
     const TEAM_ID = 'main';
+    const OWNER_EMAIL = 'dq060412@gmail.com';
 
     const appState = {
         currentUser: null,
@@ -47,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===== Referensi Firestore =====
     const projectsCol = collection(db, 'teams', TEAM_ID, 'projects');
     const envelopesCol = collection(db, 'teams', TEAM_ID, 'fund_envelopes');
+    const membersCol = collection(db, 'teams', TEAM_ID, 'members');
 
 
     // ===== Helper & Utilitas =====
@@ -152,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (appState.roleUnsub) appState.roleUnsub();
         if (user) {
             appState.currentUser = user;
-            updateUIForUser(user, 'Pending');
+            updateUIForUser(user, 'Pending'); // Initial state while checking DB
             ensureMemberDoc(user);
         } else {
             appState.currentUser = null; 
@@ -163,17 +166,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function ensureMemberDoc(user) {
-        const userDocRef = doc(db, 'teams/main/members', user.uid);
+        const userDocRef = doc(membersCol, user.uid);
         try {
             const docSnap = await getDoc(userDocRef);
             if (!docSnap.exists()) {
+                // ** PERBAIKAN: Tentukan peran saat pembuatan dokumen **
+                const initialRole = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() 
+                    ? 'Owner' 
+                    : 'Pending';
+                
                 await setDoc(userDocRef, {
                     email: user.email, name: user.displayName, photoURL: user.photoURL,
-                    role: 'Pending', createdAt: serverTimestamp(),
+                    role: initialRole, // Gunakan peran yang sudah ditentukan
+                    createdAt: serverTimestamp(),
                 });
             }
+            
+            // Listener tetap ada untuk mendeteksi perubahan peran di masa depan
             appState.roleUnsub = onSnapshot(userDocRef, snap => {
-                appState.userRole = snap.data()?.role || 'Pending';
+                let currentRole = snap.data()?.role || 'Pending';
+                
+                // Logika double-check untuk memastikan Owner selalu jadi Owner
+                if ((user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() && currentRole !== 'Owner') {
+                    updateDoc(userDocRef, { role: 'Owner' });
+                    currentRole = 'Owner'; // Update state lokal segera
+                }
+
+                appState.userRole = currentRole;
                 renderUI();
             });
         } catch (error) {
@@ -263,58 +282,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // ** PENAMBAHAN BARU: Panggil render spesifik untuk dashboard **
         if (appState.activePage === 'dashboard') {
             renderDashboardPage(container);
+        } else if (appState.activePage === 'pengaturan') {
+            renderPengaturanPage(container);
         } else {
             const pageTitle = appState.activePage.replace('-', ' ');
             container.innerHTML = `<div class="card card-pad"><h4 style="text-transform: capitalize;">${pageTitle}</h4><p>Fitur untuk halaman ini masih dalam tahap pengembangan.</p></div>`;
         }
     }
 
-    // ** PENAMBAHAN BARU: Fungsi untuk merender konten Dashboard **
     async function renderDashboardPage(container) {
-        // Tampilkan skeleton loading
         container.innerHTML = `
-            <div class="section-head">
-                <h4>Dashboard Proyek</h4>
-                <div class="chips">
-                    <span class="chip skeleton" style="width: 150px; height: 28px;"></span>
-                    <span class="chip skeleton" style="width: 120px; height: 28px;"></span>
-                </div>
-            </div>
-            <div class="kpi-grid">
-                <div class="kpi-card skeleton" style="height: 80px;"></div>
-                <div class="kpi-card skeleton" style="height: 80px;"></div>
-                <div class="kpi-card skeleton" style="height: 80px;"></div>
-                <div class="kpi-card skeleton" style="height: 80px;"></div>
-                <div class="kpi-card skeleton" style="height: 80px;"></div>
-            </div>`;
-
+            <div class="section-head"><h4>Dashboard Proyek</h4><div class="chips"><span class="chip skeleton" style="width: 150px; height: 28px;"></span><span class="chip skeleton" style="width: 120px; height: 28px;"></span></div></div>
+            <div class="kpi-grid"><div class="kpi-card skeleton" style="height: 80px;"></div><div class="kpi-card skeleton" style="height: 80px;"></div><div class="kpi-card skeleton" style="height: 80px;"></div><div class="kpi-card skeleton" style="height: 80px;"></div><div class="kpi-card skeleton" style="height: 80px;"></div></div>`;
         try {
-            const projectQuery = query(projectsCol, limit(1));
-            const projSnap = await getDocs(projectQuery);
-
+            const projSnap = await getDocs(query(projectsCol, limit(1)));
             if (projSnap.empty) {
-                container.innerHTML = `<div class="card card-pad"><h4>Belum Ada Proyek</h4><p>Silakan buat proyek baru di halaman pengaturan untuk memulai.</p></div>`;
+                container.innerHTML = `<div class="card card-pad"><h4>Belum Ada Proyek</h4><p>Silakan buat proyek baru untuk memulai.</p></div>`;
                 return;
             }
-
             const project = projSnap.docs[0].data();
             const projectId = projSnap.docs[0].id;
-            
             const envelopeDoc = await getDoc(doc(envelopesCol, projectId));
             const envelope = envelopeDoc.exists() ? envelopeDoc.data() : {};
-
-            // Ganti skeleton dengan data asli
             container.innerHTML = `
-                <div class="section-head">
-                    <h4>Dashboard Proyek</h4>
-                    <div class="chips">
-                        <span class="chip">Kontrak: ${fmtIDR(project.contractValue || 0)}</span>
-                        <span class="chip">Progres: ${(project.progressPct || 0)}%</span>
-                    </div>
-                </div>
+                <div class="section-head"><h4>Dashboard Proyek</h4><div class="chips"><span class="chip">Kontrak: ${fmtIDR(project.contractValue || 0)}</span><span class="chip">Progres: ${(project.progressPct || 0)}%</span></div></div>
                 <div class="kpi-grid">
                     <div class="kpi-card"><h5>Operasional</h5><div class="amt">${fmtIDR(envelope.operationalBalance || 0)}</div></div>
                     <div class="kpi-card"><h5>Cadangan</h5><div class="amt">${fmtIDR(envelope.contingencyBalance || 0)}</div></div>
@@ -322,14 +315,73 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="kpi-card"><h5>Overhead</h5><div class="amt">${fmtIDR(envelope.overheadPoolBalance || 0)}</div></div>
                     <div class="kpi-card"><h5>Cicilan</h5><div class="amt">${fmtIDR(envelope.sinkingFundBalance || 0)}</div></div>
                 </div>`;
-
         } catch (error) {
             console.error("Error rendering dashboard:", error);
-            container.innerHTML = `<div class="card card-pad card--danger"><h4>Gagal Memuat Data</h4><p>Terjadi kesalahan saat mengambil data dasbor. Silakan coba lagi nanti.</p></div>`;
+            container.innerHTML = `<div class="card card-pad card--danger"><h4>Gagal Memuat Data</h4><p>Terjadi kesalahan saat mengambil data dasbor.</p></div>`;
             toast('error', 'Gagal memuat data dasbor.');
         }
     }
 
+    async function renderPengaturanPage(container) {
+        if (appState.userRole !== 'Admin' && appState.userRole !== 'Owner') {
+            container.innerHTML = `<div class="card card-pad card--danger"><h4>Akses Ditolak</h4><p>Anda tidak memiliki izin untuk mengakses halaman ini.</p></div>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="section-head"><h4>Pengaturan Tim</h4></div>
+            <div class="card card-pad"><div class="team-management-list"><div class="skeleton" style="height: 60px; margin-bottom: 1rem;"></div><div class="skeleton" style="height: 60px;"></div></div></div>`;
+        try {
+            const memberSnap = await getDocs(membersCol);
+            const members = memberSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            container.innerHTML = `
+                <div class="section-head"><h4>Pengaturan Tim</h4><p class="section-subtitle">Kelola peran dan akses anggota tim Anda.</p></div>
+                <div class="card card-pad">
+                    <div class="team-management-list">
+                        ${members.map(member => `
+                            <div class="team-member-card">
+                                <img src="${member.photoURL || `https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="team-member-avatar" />
+                                <div class="team-member-info">
+                                    <strong class="team-member-name">${member.name || 'N/A'}</strong>
+                                    <span class="team-member-email">${member.email}</span>
+                                </div>
+                                <div class="team-member-role">
+                                    <select class="role-select" data-userid="${member.id}" ${member.email === OWNER_EMAIL ? 'disabled' : ''}>
+                                        <option value="Pending" ${member.role === 'Pending' ? 'selected' : ''}>Pending</option>
+                                        <option value="Viewer" ${member.role === 'Viewer' ? 'selected' : ''}>Viewer</option>
+                                        <option value="Editor" ${member.role === 'Editor' ? 'selected' : ''}>Editor</option>
+                                        <option value="Admin" ${member.role === 'Admin' ? 'selected' : ''}>Admin</option>
+                                        <option value="Owner" ${member.role === 'Owner' ? 'selected' : ''} disabled>Owner</option>
+                                    </select>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            
+            $$('.role-select').forEach(select => {
+                select.addEventListener('change', async (e) => {
+                    const newRole = e.target.value;
+                    const userId = e.target.dataset.userid;
+                    if (!userId) return;
+                    
+                    toast('loading', `Mengubah peran...`);
+                    try {
+                        await updateDoc(doc(membersCol, userId), { role: newRole });
+                        toast('success', `Peran berhasil diubah.`);
+                    } catch (error) {
+                        toast('error', 'Gagal mengubah peran.');
+                        e.target.value = members.find(m => m.id === userId).role;
+                    }
+                });
+            });
+
+        } catch (error) {
+            console.error("Error fetching team members:", error);
+            container.innerHTML = `<div class="card card-pad card--danger"><h4>Gagal Memuat Data</h4><p>Terjadi kesalahan saat mengambil data anggota tim.</p></div>`;
+        }
+    }
 
     function updateFabVisibility() {
         const fab = $('#fab');
