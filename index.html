@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Portal Keuangan Proyek</title>
+
+  <!-- PWA & Meta Tags -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="icon" href="https://placehold.co/64x64/3b82f6/ffffff?text=P" type="image/png">
+  <meta name="description" content="Portal Keuangan Proyek untuk manajemen transaksi, absensi, dan laporan secara efisien.">
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app-shell">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">
+        <img class="brand-logo-sidebar" src="https://placehold.co/40x40/3b82f6/ffffff?text=P" alt="Logo" />
+        <div class="brand-text-sidebar">
+          <strong>Portal Proyek</strong>
+          <small>Manajemen Keuangan</small>
+        </div>
+      </div>
+
+      <nav class="nav-container">
+        <button class="nav-item active" data-nav="dashboard">
+          <span class="material-symbols-outlined">dashboard</span>
+          <span class="nav-text">Dashboard</span>
+        </button>
+        <button class="nav-item" data-nav="tagihan" data-role="Viewer,Editor,Admin,Owner">
+          <span class="material-symbols-outlined">receipt_long</span>
+          <span class="nav-text">Tagihan</span>
+        </button>
+        <button class="nav-item" data-nav="pengaturan" data-role="Admin,Owner">
+          <span class="material-symbols-outlined">settings</span>
+          <span class="nav-text">Pengaturan</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="auth-btn" class="nav-item">
+          <span class="material-symbols-outlined">login</span>
+          <span class="nav-text">Login</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Content Wrapper -->
+    <div class="content-wrapper">
+      <header class="main-header">
+        <div class="header-left">
+          <button id="btnOpenNav" class="icon-btn" aria-label="Buka Menu">
+            <span class="material-symbols-outlined">menu</span>
+          </button>
+        </div>
+
+        <div class="header-actions">
+          <div id="connection-status" class="connection-status" title="Status Koneksi">
+            <span class="status-dot dot--red"></span>
+          </div>
+          
+          <div class="user-profile-wrapper">
+            <button id="user-profile-btn" class="user-profile-btn" aria-label="Profil Pengguna">
+              <img id="user-avatar" src="https://placehold.co/40x40/e2e8f0/64748b?text=G" alt="Avatar" />
+            </button>
+            <div id="user-dropdown" class="dropdown-panel user-dropdown hidden">
+                <div class="user-dropdown-body">
+                    <div class="user-info-main">
+                        <img id="user-dropdown-avatar" src="https://placehold.co/80x80/e2e8f0/64748b?text=G" alt="Avatar Pengguna" />
+                        <strong id="user-dropdown-name">Guest</strong>
+                        <span id="user-dropdown-email">Silakan login</span>
+                    </div>
+                    <div class="user-info-role hidden" id="user-role-section">
+                        <span class="material-symbols-outlined" id="user-role-icon"></span>
+                        <span id="user-role-text"></span>
+                    </div>
+                </div>
+                <div class="user-dropdown-footer">
+                    <button id="auth-dropdown-btn" class="btn btn-secondary w-full">
+                    <span class="material-symbols-outlined">login</span>
+                    <span>Login dengan Google</span>
+                    </button>
+                </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="page-container">
+        <!-- Konten halaman dinamis akan dimuat di sini oleh JavaScript -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Scrim (Overlay untuk sidebar mobile) -->
+  <div id="scrim" class="scrim"></div>
+
+  <!-- Popup/Toast Notifikasi -->
+  <div id="popup-container" class="popup-container">
+    <div class="popup-content">
+      <span id="popup-icon" class="material-symbols-outlined"></span>
+      <p id="popup-message"></p>
+    </div>
+  </div>
+
+  <!-- Container untuk Modal Dinamis -->
+  <div id="modal-container"></div>
+  
+  <!-- Firebase v9+ modular sebagai module -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
+
