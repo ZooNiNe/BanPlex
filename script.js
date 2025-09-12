@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fundingSourcesCol = collection(db, 'teams', TEAM_ID, 'funding_sources');
     const digitalEnvelopesDoc = doc(db, 'teams', TEAM_ID, 'envelopes', 'main_budget');
 
+
     // ===== Helper & Utilitas =====
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -149,11 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===== Logika Otentikasi & State Management =====
     onAuthStateChanged(auth, user => {
         if (appState.roleUnsub) appState.roleUnsub();
+        
         if (user) {
             appState.currentUser = user;
-            updateUIForUser(user, 'Pending'); 
+            // Tampilkan UI dasar (seperti header) segera, tapi jangan render konten halaman dulu
+            updateUIForUser(user, 'Pending');
+            // Pastikan peran pengguna didapatkan sebelum me-render seluruh UI
             ensureMemberDoc(user);
         } else {
+            // Jika tidak ada user, reset state ke Guest dan render UI
             appState.currentUser = null; 
             appState.userRole = 'Guest';
             appState.digitalEnvelopes = null;
@@ -180,19 +185,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 await updateDoc(userDocRef, { role: 'Owner' });
                 currentRole = 'Owner';
             }
+            
+            // Setelah peran PASTI didapatkan, update state dan panggil renderUI
             appState.userRole = currentRole;
-            renderUI();
+            renderUI(); // Di sini renderUI akan dipanggil dengan peran yang benar
+
+            // Pasang listener untuk perubahan peran di masa depan
             appState.roleUnsub = onSnapshot(userDocRef, snap => {
                 const newRole = snap.data()?.role || 'Pending';
                 if (appState.userRole !== newRole) {
                     appState.userRole = newRole;
-                    renderUI();
+                    renderUI(); // Render ulang hanya jika peran berubah
                 }
             });
         } catch (error) {
             console.error("Error ensuring user doc:", error);
             appState.userRole = 'Error';
-            renderUI();
+            renderUI(); // Render UI bahkan jika ada error untuk menampilkan pesan error
         }
     }
     
@@ -216,12 +225,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== FUNGSI RENDER UTAMA =====
     async function renderUI() {
-        if (appState.currentUser && !appState.digitalEnvelopes) {
-            await fetchDigitalEnvelopes();
-        }
+        // PERBAIKAN: Fungsi ini sekarang dipanggil HANYA setelah peran dikonfirmasi
         updateUIForUser(appState.currentUser, appState.userRole);
         updateNavActiveState();
-        renderPageContent();
+        
+        // Tunda render konten halaman sampai peran siap dan data yang dibutuhkan (seperti amplop) sudah ada
+        if (appState.userRole === 'Guest' || appState.userRole === 'Pending') {
+            renderPageContent();
+        } else {
+            if (!appState.digitalEnvelopes) await fetchDigitalEnvelopes();
+            renderPageContent();
+        }
     }
     
     async function fetchDigitalEnvelopes() {
@@ -323,9 +337,9 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = `<div class="card card-pad"><h4 style="text-transform: capitalize;">${pageTitle}</h4><p>Fitur untuk halaman ini masih dalam tahap pengembangan.</p></div>`;
         }
     }
-
-    // ===== HALAMAN-HALAMAN DENGAN LOGIKA BARU =====
-
+    
+    // ===== FUNGSI RENDER HALAMAN-HALAMAN =====
+    // ... (Semua fungsi render halaman seperti renderDashboardPage, renderPemasukanPage, dll, tetap sama) ...
     async function renderDashboardPage(container) {
         container.innerHTML = `<div class="dashboard-grid"><div class="dashboard-widget skeleton" style="height:150px"></div><div class="dashboard-widget skeleton" style="height:150px"></div><div class="dashboard-widget skeleton" style="height:150px"></div></div>`;
         try {
@@ -709,7 +723,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const newTheme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
             localStorage.setItem('theme', newTheme); applyTheme(newTheme);
         });
-        renderUI();
     }
 
     function getUIElements() {
