@@ -8,7 +8,7 @@
   <!-- PWA & Meta Tags -->
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#ffffff" />
-  <link rel="icon" href="https://placehold.co/64x64/3b82f6/ffffff?text=P" type="image/png">
+  <link rel="icon" href="logo-main.png" type="image/png">
   <meta name="description" content="Portal Keuangan Proyek untuk manajemen transaksi, absensi, dan laporan secara efisien.">
 
   <!-- Fonts & Icons -->
@@ -25,7 +25,7 @@
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-head">
-        <img class="brand-logo-sidebar" src="https://placehold.co/40x40/3b82f6/ffffff?text=P" alt="Logo" />
+        <img class="brand-logo-sidebar" src="logo-main.png" alt="Logo" />
         <div class="brand-text-sidebar">
           <strong>Portal Proyek</strong>
           <small>Manajemen Keuangan</small>
@@ -37,9 +37,25 @@
           <span class="material-symbols-outlined">dashboard</span>
           <span class="nav-text">Dashboard</span>
         </button>
-        <button class="nav-item" data-nav="tagihan" data-role="Viewer,Editor,Admin,Owner">
+        <button class="nav-item" data-nav="input-data">
+          <span class="material-symbols-outlined">edit_document</span>
+          <span class="nav-text">Input Data</span>
+        </button>
+        <button class="nav-item" data-nav="absensi">
+          <span class="material-symbols-outlined">group</span>
+          <span class="nav-text">Absensi</span>
+        </button>
+        <button class="nav-item" data-nav="stok-material">
+          <span class="material-symbols-outlined">inventory_2</span>
+          <span class="nav-text">Stok Material</span>
+        </button>
+        <button class="nav-item" data-nav="tagihan">
           <span class="material-symbols-outlined">receipt_long</span>
           <span class="nav-text">Tagihan</span>
+        </button>
+        <button class="nav-item" data-nav="monitoring">
+          <span class="material-symbols-outlined">monitoring</span>
+          <span class="nav-text">Laporan</span>
         </button>
         <button class="nav-item" data-nav="pengaturan" data-role="Admin,Owner">
           <span class="material-symbols-outlined">settings</span>
@@ -67,6 +83,23 @@
         <div class="header-actions">
           <div id="connection-status" class="connection-status" title="Status Koneksi">
             <span class="status-dot dot--red"></span>
+          </div>
+
+          <button id="theme-toggle-btn" class="icon-btn" aria-label="Ganti Tema">
+            <span class="material-symbols-outlined">light_mode</span>
+          </button>
+
+          <div class="notification-wrapper">
+            <button id="notification-btn" class="icon-btn" aria-label="Notifikasi">
+              <span class="material-symbols-outlined">notifications</span>
+              <div class="notification-badge hidden"></div>
+            </button>
+            <div id="notification-dropdown" class="dropdown-panel hidden">
+              <div class="dropdown-header">Notifikasi</div>
+              <div class="dropdown-body">
+                <p class="empty-state">Belum ada notifikasi baru.</p>
+              </div>
+            </div>
           </div>
           
           <div class="user-profile-wrapper">
@@ -102,10 +135,12 @@
     </div>
   </div>
   
-  <!-- Scrim (Overlay untuk sidebar mobile) -->
+  <button id="fab" class="fab hidden" aria-label="Tambah Data" data-role="Editor,Admin,Owner">
+    <span class="material-symbols-outlined">add</span>
+  </button>
+
   <div id="scrim" class="scrim"></div>
 
-  <!-- Popup/Toast Notifikasi -->
   <div id="popup-container" class="popup-container">
     <div class="popup-content">
       <span id="popup-icon" class="material-symbols-outlined"></span>
@@ -113,10 +148,8 @@
     </div>
   </div>
 
-  <!-- Container untuk Modal Dinamis -->
   <div id="modal-container"></div>
   
-  <!-- Firebase v9+ modular sebagai module -->
   <script type="module" src="script.js"></script>
 </body>
 </html>
