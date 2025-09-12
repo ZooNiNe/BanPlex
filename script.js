@@ -153,48 +153,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     onAuthStateChanged(auth, user => {
         if (appState.roleUnsub) appState.roleUnsub();
+        
         if (user) {
             appState.currentUser = user;
-            updateUIForUser(user, 'Pending'); // Initial state while checking DB
+            // Tampilkan UI dasar untuk user, tapi konten utama masih loading
+            updateUIForUser(user, 'Pending'); 
             ensureMemberDoc(user);
         } else {
             appState.currentUser = null; 
             appState.userRole = 'Guest';
-            updateUIForUser(null, 'Guest');
-            renderUI();
+            renderUI(); // Render sebagai Guest
         }
     });
 
     async function ensureMemberDoc(user) {
+        if (appState.roleUnsub) appState.roleUnsub(); // Hentikan listener lama
         const userDocRef = doc(membersCol, user.uid);
+        
         try {
             const docSnap = await getDoc(userDocRef);
-            if (!docSnap.exists()) {
-                // ** PERBAIKAN: Tentukan peran saat pembuatan dokumen **
-                const initialRole = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() 
+            let userExists = docSnap.exists();
+            let currentRole = 'Pending';
+
+            if (!userExists) {
+                // Tentukan peran SEBELUM membuat dokumen
+                currentRole = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() 
                     ? 'Owner' 
                     : 'Pending';
                 
                 await setDoc(userDocRef, {
                     email: user.email, name: user.displayName, photoURL: user.photoURL,
-                    role: initialRole, // Gunakan peran yang sudah ditentukan
+                    role: currentRole,
                     createdAt: serverTimestamp(),
                 });
+            } else {
+                 currentRole = docSnap.data()?.role || 'Pending';
             }
             
-            // Listener tetap ada untuk mendeteksi perubahan peran di masa depan
-            appState.roleUnsub = onSnapshot(userDocRef, snap => {
-                let currentRole = snap.data()?.role || 'Pending';
-                
-                // Logika double-check untuk memastikan Owner selalu jadi Owner
-                if ((user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() && currentRole !== 'Owner') {
-                    updateDoc(userDocRef, { role: 'Owner' });
-                    currentRole = 'Owner'; // Update state lokal segera
-                }
+            // Lakukan pengecekan Owner sekali lagi untuk keamanan
+            if ((user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() && currentRole !== 'Owner') {
+                await updateDoc(userDocRef, { role: 'Owner' });
+                currentRole = 'Owner';
+            }
 
-                appState.userRole = currentRole;
-                renderUI();
+            // Setelah peran pasti didapatkan, update state dan render UI
+            appState.userRole = currentRole;
+            renderUI();
+
+            // Pasang listener untuk perubahan di masa depan
+            appState.roleUnsub = onSnapshot(userDocRef, snap => {
+                const newRole = snap.data()?.role || 'Pending';
+                if (appState.userRole !== newRole) {
+                    appState.userRole = newRole;
+                    renderUI(); // Render ulang hanya jika peran berubah
+                }
             });
+
         } catch (error) {
             console.error("Error ensuring user doc:", error);
             appState.userRole = 'Error';
@@ -212,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function updateUIForUser(user, role) {
         const guestAvatar = 'https://placehold.co/40x40/e2e8f0/64748b?text=G';
-        const { statusDot, userAvatar, dropdownAvatar, dropdownName, dropdownEmail, roleSection, roleIcon, roleText, authBtnText, authDropdownBtn, authDropdownBtnText, authDropdownBtnIcon } = getUIElements();
+        const { statusDot, userAvatar, dropdownAvatar, dropdownName, dropdownEmail, roleSection, roleIcon, roleText, authBtnText, authDropdownBtnText, authDropdownBtnIcon } = getUIElements();
 
         if (user) {
             const photo = user.photoURL || `https://placehold.co/40x40/3b82f6/ffffff?text=${(user.displayName||'U')[0]}`;
