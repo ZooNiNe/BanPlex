@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const OWNER_EMAIL = 'dq060412@gmail.com';
     const TOTAL_BUDGET = 1420000000;
 
-    // ===== PERBAIKAN: Helper & Utilitas dipindahkan ke atas =====
+    // ===== Helper & Utilitas =====
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => Array.from(document.querySelectorAll(s));
     const fmtIDR = (n)=> new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(Number(n||0));
@@ -71,26 +71,69 @@ document.addEventListener('DOMContentLoaded', () => {
     function getNumericValue(formattedString) {
         return formattedString ? parseFloat(String(formattedString).replace(/\./g, '').replace(',', '.')) : 0;
     }
+    
+    // ===== PEMBARUAN: Fungsi untuk Pop-up Select Kustom =====
+    function createCustomSelect(selectElement) {
+        if (!selectElement || selectElement.parentElement.classList.contains('custom-select-wrapper')) return;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'custom-select-wrapper';
+        selectElement.parentNode.insertBefore(wrapper, selectElement);
+        wrapper.appendChild(selectElement);
+        selectElement.classList.add('hidden');
+
+        const trigger = document.createElement('div');
+        trigger.className = 'custom-select-trigger';
+        wrapper.appendChild(trigger);
+
+        const optionsContainer = document.createElement('div');
+        optionsContainer.className = 'custom-select-options';
+        wrapper.appendChild(optionsContainer);
+        
+        const updateTriggerText = () => {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            trigger.textContent = selectedOption ? selectedOption.textContent : '';
+        };
+
+        Array.from(selectElement.options).forEach((optionEl, index) => {
+            const option = document.createElement('div');
+            option.className = 'custom-select-option';
+            option.textContent = optionEl.textContent;
+            option.dataset.value = optionEl.value;
+            if (optionEl.selected) option.classList.add('selected');
+            
+            option.addEventListener('click', () => {
+                selectElement.selectedIndex = index;
+                const changeEvent = new Event('change', { bubbles: true });
+                selectElement.dispatchEvent(changeEvent);
+                updateTriggerText();
+                optionsContainer.parentElement.classList.remove('open');
+                optionsContainer.querySelectorAll('.selected').forEach(o => o.classList.remove('selected'));
+                option.classList.add('selected');
+            });
+            optionsContainer.appendChild(option);
+        });
+
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Close other selects before opening this one
+            $$('.custom-select-wrapper.open').forEach(openWrapper => {
+                if(openWrapper !== wrapper) openWrapper.classList.remove('open');
+            });
+            wrapper.classList.toggle('open');
+        });
+
+        updateTriggerText();
+        return wrapper;
+    }
 
     const appState = {
-        currentUser: null,
-        userRole: 'Guest',
-        roleUnsub: null,
+        currentUser: null, userRole: 'Guest', roleUnsub: null,
         activePage: localStorage.getItem('lastActivePage') || 'dashboard',
-        editingInvoiceId: null,
-        creditors: [],
-        projects: [],
-        stockItems: [],
-        workers: [],
-        currentInvoiceItems: [],
-        digitalEnvelopes: null,
-        cachedSuggestions: {
-            itemNames: new Set(),
-        },
-        attendanceDate: todayStr(), // Sekarang `todayStr` sudah bisa diakses
-        reports: {
-            expenseChart: null,
-        }
+        editingInvoiceId: null, creditors: [], projects: [], stockItems: [], workers: [],
+        currentInvoiceItems: [], digitalEnvelopes: null,
+        cachedSuggestions: { itemNames: new Set() },
+        attendanceDate: todayStr(),
+        reports: { expenseChart: null }
     };
     
     // ===== Inisialisasi Firebase & Referensi =====
@@ -206,6 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (type === 'newWorker' || type === 'editWorker') {
              formatRupiahInput($('#worker-wage'));
+             createCustomSelect($('#worker-project')); // PEMBARUAN DI SINI
              modalEl.querySelector('#worker-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 handleSaveWorker(data.id);
@@ -217,7 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 handleSaveStockItem(data.id);
              });
         }
-        if (type === 'recordStockUsage') modalEl.querySelector('#stock-usage-form')?.addEventListener('submit', handleRecordStockUsage);
+        if (type === 'recordStockUsage') {
+            createCustomSelect($('#usage-item')); // PEMBARUAN DI SINI
+            modalEl.querySelector('#stock-usage-form')?.addEventListener('submit', handleRecordStockUsage);
+        }
     }
 
     function closeModal(modalEl) {
@@ -400,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'pengaturan': renderPengaturanPage,
             'absensi': renderAbsensiPage,
             'manajemen-stok': renderManajemenStokPage,
-            'laporan': renderLaporanPage, // PENAMBAHAN RENDERER LAPORAN
+            'laporan': renderLaporanPage,
         };
 
         const renderer = pageRenderers[appState.activePage];
@@ -435,8 +482,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPemasukanPage(container) {
         container.innerHTML = `<div class="section-head"><h4>Manajemen Pemasukan & Pinjaman</h4></div><div class="card card-pad"><form id="funding-source-form"><div class="form-section"><h5 class="form-section-title">Tambah Pemasukan Baru</h5><div class="form-grid-invoice"><div class="form-group"><label for="fs-date">Tanggal</label><input type="date" id="fs-date" value="${todayStr()}" required></div><div class="form-group"><label for="fs-type">Jenis</label><select id="fs-type" required><option value="Pencairan Termin">Pencairan Termin</option><option value="Pinjaman (Tanpa Bunga)">Pinjaman (Tanpa Bunga)</option><option value="Pinjaman (Dengan Bunga)">Pinjaman (Dengan Bunga)</option></select></div><div class="form-group span-2"><label for="fs-desc">Keterangan</label><input type="text" id="fs-desc" required placeholder="Contoh: Termin Tahap 1 (20%)"></div><div class="form-group"><label for="fs-amount">Jumlah</label><input type="text" id="fs-amount" required placeholder="0"></div></div><div id="interest-fields-wrapper" class="form-grid-invoice hidden" style="margin-top:1rem;border-top:1px solid var(--line);padding-top:1rem;"><div class="form-group"><label for="fs-interest-rate">Bunga (%/Tahun)</label><input type="number" id="fs-interest-rate" placeholder="0"></div><div class="form-group"><label for="fs-tenor">Tenor (Bulan)</label><input type="number" id="fs-tenor" placeholder="0"></div><div class="form-group"><label>Total Tagihan</label><input type="text" id="fs-total-repayable" disabled placeholder="Otomatis"></div></div></div><div class="form-group full" style="margin-top:1.5rem;"><button type="submit" class="btn btn-primary">Simpan Pemasukan</button></div></form></div><div class="card card-pad" style="margin-top:1.5rem;"><h5 class="form-section-title">Riwayat Pemasukan & Pinjaman</h5><div class="table-container" id="funding-sources-table-container"><p>Memuat data...</p></div></div>`;
         formatRupiahInput($('#fs-amount'));
+        createCustomSelect($('#fs-type'));
         $('#fs-type').addEventListener('change', () => $('#interest-fields-wrapper').classList.toggle('hidden', $('#fs-type').value !== 'Pinjaman (Dengan Bunga)'));
-        $('#fs-amount, #fs-interest-rate, #fs-tenor').forEach(el => el.addEventListener('input', calculateTotalRepayable));
+        // PERBAIKAN: Menggunakan $$ untuk memilih beberapa elemen
+        $$('#fs-amount, #fs-interest-rate, #fs-tenor').forEach(el => el.addEventListener('input', calculateTotalRepayable));
         $('#funding-source-form').addEventListener('submit', handleSaveFundingSource);
         fetchAndDisplayFundingSources();
     }
@@ -454,37 +503,92 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ===== PEMBARUAN: Logika Simpan Pemasukan dengan Transaksi & Integrasi =====
     async function handleSaveFundingSource(e) {
         e.preventDefault();
         const form = e.target;
-        const type = form.querySelector('#fs-type').value;
-        const principal = getNumericValue(form.querySelector('#fs-amount').value);
-        const data = {
-            date: Timestamp.fromDate(new Date(form.querySelector('#fs-date').value)),
-            type, description: form.querySelector('#fs-desc').value, amount: principal,
-            createdBy: appState.currentUser.email, createdAt: serverTimestamp(),
-        };
-        if (type.includes('Pinjaman')) {
-            data.isFullyPaid = false; data.amountPaid = 0; data.totalRepayableAmount = principal;
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        // Nonaktifkan tombol untuk mencegah klik ganda
+        submitBtn.disabled = true;
+        
+        // Penjaga untuk memastikan pengguna sudah terautentikasi sebelum melanjutkan
+        if (!appState.currentUser) {
+            toast('error', 'Sesi tidak valid. Silakan muat ulang halaman.');
+            console.error("Attempted to save funding source without a valid user.");
+            submitBtn.disabled = false; // Aktifkan kembali tombol
+            return;
         }
-        if (type === 'Pinjaman (Dengan Bunga)') {
-            const annualRate = parseFloat(form.querySelector('#fs-interest-rate').value) || 0;
-            const tenorMonths = parseInt(form.querySelector('#fs-tenor').value) || 0;
-            if (annualRate <= 0 || tenorMonths <= 0) {
-                toast('error', 'Bunga dan tenor harus diisi.'); return;
-            }
-            const totalInterest = principal * (annualRate / 100) * (tenorMonths / 12);
-            data.interestRate = annualRate; data.tenorInMonths = tenorMonths;
-            data.totalRepayableAmount = principal + totalInterest;
-        }
-        toast('loading', 'Menyimpan...');
+
         try {
-            await addDoc(fundingSourcesCol, data);
-            toast('success', 'Pemasukan berhasil disimpan.');
-            form.reset(); $('#fs-date').value = todayStr();
-            $('#interest-fields-wrapper').classList.add('hidden');
-            fetchAndDisplayFundingSources();
-        } catch (error) { toast('error', 'Gagal menyimpan data.'); console.error(error); }
+            const type = form.querySelector('#fs-type').value;
+            const principal = getNumericValue(form.querySelector('#fs-amount').value);
+
+            if(!principal || principal <= 0){
+                toast('error', 'Jumlah pemasukan harus lebih dari nol.');
+                return; // Keluar dari fungsi jika validasi gagal
+            }
+
+            const data = {
+                date: Timestamp.fromDate(new Date(form.querySelector('#fs-date').value)),
+                type, description: form.querySelector('#fs-desc').value.trim(), amount: principal,
+                createdBy: appState.currentUser.email, createdAt: serverTimestamp(),
+            };
+
+            if (type.includes('Pinjaman')) {
+                data.isFullyPaid = false; data.amountPaid = 0; data.totalRepayableAmount = principal;
+            }
+
+            if (type === 'Pinjaman (Dengan Bunga)') {
+                const annualRate = parseFloat(form.querySelector('#fs-interest-rate').value) || 0;
+                const tenorMonths = parseInt(form.querySelector('#fs-tenor').value) || 0;
+                if (annualRate <= 0 || tenorMonths <= 0) {
+                    toast('error', 'Bunga dan tenor harus diisi untuk pinjaman berbunga.');
+                    return; // Keluar dari fungsi jika validasi gagal
+                }
+                const totalInterest = principal * (annualRate / 100) * (tenorMonths / 12);
+                data.interestRate = annualRate; data.tenorInMonths = tenorMonths;
+                data.totalRepayableAmount = principal + totalInterest;
+            }
+            
+            toast('loading', 'Menyimpan & mengintegrasikan data...');
+
+            await runTransaction(db, async (transaction) => {
+                // --- PERBAIKAN DIMULAI DI SINI ---
+                
+                // 1. Lakukan SEMUA OPERASI BACA terlebih dahulu
+                let envDoc;
+                if (type === 'Pencairan Termin') {
+                    envDoc = await transaction.get(digitalEnvelopesDoc);
+                }
+
+                // 2. Lakukan SEMUA OPERASI TULIS setelahnya
+                const newFundingDocRef = doc(collection(db, 'teams', TEAM_ID, 'funding_sources'));
+                transaction.set(newFundingDocRef, data);
+
+                if (type === 'Pencairan Termin') {
+                    if (!envDoc.exists()) {
+                        transaction.set(digitalEnvelopesDoc, { unallocatedFunds: principal, debtPayment: 0, operational: 0, reserve: 0, profit: 0 });
+                    } else {
+                        const currentData = envDoc.data();
+                        const newUnallocated = (currentData.unallocatedFunds || 0) + principal;
+                        transaction.update(digitalEnvelopesDoc, { unallocatedFunds: newUnallocated });
+                    }
+                }
+                // --- PERBAIKAN SELESAI ---
+            });
+
+            toast('success', 'Pemasukan berhasil disimpan dan terintegrasi.');
+            await fetchDigitalEnvelopes(); // Update state amplop digital
+            renderPemasukanPage($('#page-pemasukan-pinjaman')); // Re-render halaman
+            
+        } catch (error) {
+            toast('error', 'Gagal menyimpan data.');
+            console.error("Error saving funding source:", error);
+        } finally {
+            // Pastikan tombol diaktifkan kembali
+             if(submitBtn) submitBtn.disabled = false;
+        }
     }
 
     async function fetchAndDisplayFundingSources() {
@@ -505,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!envelopes) { container.innerHTML = `<div class="card card-pad"><p>Memuat data anggaran...</p></div>`; return; }
         container.innerHTML = `<div class="section-head"><h4>Alokasi & Anggaran</h4></div><div class="allocation-grid"><div class="card card-pad"><h5 class="form-section-title">Alokasikan Dana</h5><p class="section-subtitle">Distribusikan dana yang belum teralokasi ke dalam amplop digital.</p><form id="allocation-form"><div class="form-group"><label>Dana Tersedia</label><input type="text" value="${fmtIDR(envelopes.unallocatedFunds)}" disabled></div><div class="form-group"><label for="alloc-amount">Jumlah</label><input type="text" id="alloc-amount" placeholder="0" required></div><div class="form-group"><label for="alloc-to-envelope">Alokasikan Ke</label><select id="alloc-to-envelope" required><option value="operational">Operasional</option><option value="debtPayment">Pembayaran Hutang</option><option value="reserve">Dana Cadangan</option><option value="profit">Laba Proyek</option></select></div><button type="submit" class="btn btn-primary" style="margin-top:1rem">Alokasikan Dana</button></form></div><div class="card card-pad"><h5 class="form-section-title">Ringkasan Amplop</h5><div class="envelope-grid"><div class="envelope-card"><h6>Operasional</h6><div class="amount">${fmtIDR(envelopes.operational)}</div></div><div class="envelope-card"><h6>Hutang</h6><div class="amount">${fmtIDR(envelopes.debtPayment)}</div></div><div class="envelope-card"><h6>Cadangan</h6><div class="amount">${fmtIDR(envelopes.reserve)}</div></div><div class="envelope-card"><h6>Laba</h6><div class="amount">${fmtIDR(envelopes.profit)}</div></div></div></div></div>`;
         formatRupiahInput($('#alloc-amount'));
+        createCustomSelect($('#alloc-to-envelope')); // PEMBARUAN DI SINI
         $('#allocation-form').addEventListener('submit', handleAllocateFunds);
     }
     
@@ -535,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function renderInputDataPage(container) {
         await fetchCreditors();
-        await fetchItemNameSuggestions(); // Pre-fetch suggestions
+        await fetchItemNameSuggestions();
         container.innerHTML = `<div class="section-head"><h4>Input Pengeluaran</h4></div><div class="sub-nav"><button class="sub-nav-item active" data-category="operasional">Operasional</button><button class="sub-nav-item" data-category="material">Material</button><button class="sub-nav-item" data-category="subkontraktor">Subkontraktor</button><button class="sub-nav-item" data-category="lainnya">Lainnya</button></div><div id="sub-page-content" class="sub-page-content"></div>`;
         renderInvoiceForm($('#sub-page-content'), 'operasional');
         $$('.sub-nav-item').forEach(btn => {
@@ -552,6 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
         container.innerHTML = `<div class="card card-pad"><form id="invoice-form"><div class="form-section"><h5 class="form-section-title">Informasi Faktur</h5><div class="form-grid-invoice"><div class="form-group"><label for="inv-date">Tanggal</label><input type="date" id="inv-date" value="${todayStr()}" required></div><div class="form-group"><label>No. Faktur</label><input type="text" id="inv-number" value="${invoiceNumber}" disabled></div><div class="form-group span-2"><label for="inv-creditor">Kreditur</label><div class="input-with-button"><select id="inv-creditor" required><option value="">Pilih Kreditur...</option>${appState.creditors.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select><button type="button" id="add-creditor-btn" class="icon-btn" title="Tambah Kreditur Baru"><span class="material-symbols-outlined">add</span></button></div></div></div></div><div class="form-section"><h5 class="form-section-title">Item Pengeluaran</h5><div id="invoice-item-list" class="invoice-item-list"></div><div class="form-grid-item"><div class="form-group span-2" id="item-name-group"><label for="item-name">Nama Barang/Jasa</label><input type="text" id="item-name" autocomplete="off" placeholder="Contoh: Semen Tiga Roda"><div class="autocomplete-items" id="autocomplete-list"></div></div><div class="form-group"><label for="item-qty">Qty</label><input type="number" id="item-qty" placeholder="0"></div><div class="form-group"><label for="item-unit">Satuan</label><input type="text" id="item-unit" placeholder="sak / m3 / ls"></div><div class="form-group"><label for="item-price">Harga Satuan</label><input type="text" id="item-price" placeholder="0"></div><div class="form-group"><label>Total</label><input type="text" id="item-total" disabled placeholder="Otomatis"></div></div><button type="button" id="add-item-btn" class="btn btn-secondary" style="margin-top: 1rem;"><span class="material-symbols-outlined">add</span>Tambah Item</button></div><div class="form-section"><h5 class="form-section-title">Lampiran</h5><div class="form-grid-invoice"><div class="form-group"><label for="inv-photo" class="custom-file-upload"><span class="material-symbols-outlined">upload_file</span>Upload Foto Invoice</label><input type="file" id="inv-photo" accept="image/*"><span id="inv-photo-name" class="file-name"></span></div><div class="form-group"><label for="del-note-photo" class="custom-file-upload"><span class="material-symbols-outlined">upload_file</span>Upload Surat Jalan</label><input type="file" id="del-note-photo" accept="image/*"><span id="del-note-photo-name" class="file-name"></span></div></div></div><div class="form-group full" style="margin-top:2rem;border-top:1px solid var(--line);padding-top:1.5rem;"><div class="invoice-summary">Total Faktur: <strong id="invoice-total-amount">Rp 0,00</strong></div><button type="submit" class="btn btn-primary">Simpan Faktur</button></div></form></div>`;
         formatRupiahInput($('#item-price'));
+        createCustomSelect($('#inv-creditor')); // PEMBARUAN DI SINI
         $('#add-creditor-btn').addEventListener('click', () => createModal('newCreditor'));
         $('#add-item-btn').addEventListener('click', handleAddItemToInvoice);
         $('#invoice-form').addEventListener('submit', (e) => handleSaveInvoice(e, category));
@@ -559,7 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#inv-photo').addEventListener('change', (e) => { $('#inv-photo-name').textContent = e.target.files[0]?.name || ''; });
         $('#del-note-photo').addEventListener('change', (e) => { $('#del-note-photo-name').textContent = e.target.files[0]?.name || ''; });
         
-        // Setup autocomplete
         const itemNameInput = $('#item-name');
         itemNameInput.addEventListener('input', () => showAutocomplete(itemNameInput));
         document.addEventListener('click', (e) => { if (!e.target.closest('#item-name-group')) $('#autocomplete-list').innerHTML = ''; });
@@ -614,15 +719,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const invoicePhotoUrl = invoicePhotoFile ? await uploadFile(invoicePhotoFile, `invoices/${$('#inv-number').value}`) : null;
             const deliveryNotePhotoUrl = deliveryNoteFile ? await uploadFile(deliveryNoteFile, `delivery-notes/${$('#inv-number').value}`) : null;
             const totalAmount = appState.currentInvoiceItems.reduce((sum, item) => sum + item.totalPrice, 0);
-
-            // Add new item names to suggestions cache
+            
             appState.currentInvoiceItems.forEach(item => appState.cachedSuggestions.itemNames.add(item.itemName));
-
+            const creditorSelect = $('#inv-creditor');
             const invoiceData = {
                 invoiceNumber: $('#inv-number').value,
                 date: Timestamp.fromDate(new Date($('#inv-date').value)),
-                creditorId: $('#inv-creditor').value,
-                creditorName: $('#inv-creditor').options[$('#inv-creditor').selectedIndex].text,
+                creditorId: creditorSelect.value,
+                creditorName: creditorSelect.options[creditorSelect.selectedIndex].text,
                 category, totalAmount, amountPaid: 0, isFullyPaid: false,
                 items: appState.currentInvoiceItems,
                 invoicePhotoUrl, deliveryNotePhotoUrl,
@@ -693,10 +797,8 @@ document.addEventListener('DOMContentLoaded', () => {
             toast('success', 'Kreditur baru ditambahkan.');
             closeModal();
             await fetchCreditors();
-            const creditorSelect = $('#inv-creditor');
-            if (creditorSelect) {
-                creditorSelect.innerHTML = `<option value="">Pilih Kreditur...</option>${appState.creditors.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}`;
-            }
+            const activeCategory = $('.sub-nav-item.active')?.dataset.category || 'operasional';
+            renderInvoiceForm($('#sub-page-content'), activeCategory);
         } catch (error) { toast('error', 'Gagal menyimpan kreditur.'); console.error("Error saving creditor:", error); }
     }
     
@@ -1233,8 +1335,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const memberSnap = await getDocs(membersCol);
             const members = memberSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             container.innerHTML = `<div class="section-head"><h4>Manajemen Tim</h4><p class="section-subtitle">Kelola peran dan akses anggota tim Anda.</p></div><div class="member-card-pro-list">
-                ${members.map(member => `<div class="member-card-pro"><img src="${member.photoURL||`https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="member-card-pro__avatar" /><div class="member-card-pro__info"><strong class="member-card-pro__name">${member.name||'N/A'}</strong><span class="member-card-pro__email">${member.email}</span></div><div class="member-card-pro__role"><span class="badge">${member.role}</span></div><div class="member-card-pro__actions">${(appState.userRole==='Owner'&&member.email!==OWNER_EMAIL)||(appState.userRole==='Admin'&&member.role!=='Owner')?`<button class="icon-btn action-menu-btn" data-userid="${member.id}"><span class="material-symbols-outlined">more_vert</span></button><div class="actions-dropdown hidden" id="actions-for-${member.id}"><div class="form-group"><label>Ubah Peran</label><select class="role-select" data-userid="${member.id}"><option value="Pending" ${member.role==='Pending'?'selected':''}>Pending</option><option value="Viewer" ${member.role==='Viewer'?'selected':''}>Viewer</option><option value="Editor" ${member.role==='Editor'?'selected':''}>Editor</option>${appState.userRole==='Owner'?`<option value="Admin" ${member.role==='Admin'?'selected':''}>Admin</option>`:''}</select></div><button class="btn btn-danger btn-sm btn-remove-member" data-userid="${member.id}" data-name="${member.name}">Hapus Anggota</button></div>`:''}</div></div>`).join('')}
+                ${members.map(member => `<div class="member-card-pro"><img src="${member.photoURL||`https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="member-card-pro__avatar" /><div class="member-card-pro__info"><strong class="member-card-pro__name">${member.name||'N/A'}</strong><span class="member-card-pro__email">${member.email}</span></div><div class="member-card-pro__role"><span class="badge">${member.role}</span></div><div class="member-card-pro__actions">${(appState.userRole==='Owner'&&member.email!==OWNER_EMAIL)||(appState.userRole==='Admin'&&member.role!=='Owner')?`<button class="icon-btn action-menu-btn" data-userid="${member.id}"><span class="material-symbols-outlined">more_vert</span></button><div class="actions-dropdown hidden" id="actions-for-${member.id}"><div class="form-group"><label>Ubah Peran</label><div id="role-select-${member.id}" class="custom-select-wrapper"><select class="role-select" data-userid="${member.id}"><option value="Pending" ${member.role==='Pending'?'selected':''}>Pending</option><option value="Viewer" ${member.role==='Viewer'?'selected':''}>Viewer</option><option value="Editor" ${member.role==='Editor'?'selected':''}>Editor</option>${appState.userRole==='Owner'?`<option value="Admin" ${member.role==='Admin'?'selected':''}>Admin</option>`:''}</select></div></div><button class="btn btn-danger btn-sm btn-remove-member" data-userid="${member.id}" data-name="${member.name}">Hapus Anggota</button></div>`:''}</div></div>`).join('')}
             </div>`;
+            
             $$('.action-menu-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -1243,7 +1346,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     $(`#actions-for-${userId}`)?.classList.toggle('hidden');
                 });
             });
+
             $$('.role-select').forEach(select => {
+                const customSelect = createCustomSelect(select); // PEMBARUAN DI SINI
                 select.addEventListener('change', async (e) => {
                     const newRole = e.target.value; const userId = e.target.dataset.userid;
                     toast('loading', `Mengubah peran...`);
@@ -1254,6 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     } catch (error) { toast('error', 'Gagal mengubah peran.'); }
                 });
             });
+            
              $$('.btn-remove-member').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const userId = e.currentTarget.dataset.userid;
@@ -1281,7 +1387,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchItemNameSuggestions() {
         if (appState.cachedSuggestions.itemNames.size > 0) return;
         try {
-            const q = query(invoicesCol, limit(100)); // Ambil dari 100 faktur terakhir
+            const q = query(invoicesCol, limit(100));
             const snap = await getDocs(q);
             const itemNames = new Set();
             snap.forEach(doc => {
@@ -1336,11 +1442,22 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         userProfileBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleDropdown('user-dropdown'); });
         notificationBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleDropdown('notification-dropdown'); });
+        
         document.addEventListener('click', (e) => {
             if (!userProfileBtn.contains(e.target) && !$('#user-dropdown').contains(e.target)) $('#user-dropdown')?.classList.add('hidden');
             if (!notificationBtn.contains(e.target) && !$('#notification-dropdown').contains(e.target)) $('#notification-dropdown')?.classList.add('hidden');
-            $$('.actions-dropdown').forEach(d => { if(!d.previousElementSibling.contains(e.target)) d.classList.add('hidden')});
+            
+            const isClickInsideActionMenu = e.target.closest('.member-card-pro__actions');
+            if (!isClickInsideActionMenu) {
+                $$('.actions-dropdown').forEach(d => d.classList.add('hidden'));
+            }
+            
+            // PEMBARUAN: Menutup semua custom select pop-up
+            if (!e.target.closest('.custom-select-wrapper')) {
+                $$('.custom-select-wrapper.open').forEach(wrapper => wrapper.classList.remove('open'));
+            }
         });
+
         $$('.nav-item[data-nav]').forEach(btn => {
             btn.addEventListener('click', () => {
                 appState.activePage = btn.dataset.nav;
@@ -1394,7 +1511,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sidebar: $('#sidebar'), scrim: $('#scrim'), openNavBtn: $('#btnOpenNav'), themeToggleBtn: $('#theme-toggle-btn'), userProfileBtn: $('#user-profile-btn'), notificationBtn: $('#notification-btn'), authBtn: $('#auth-btn'), authDropdownBtn: $('#auth-dropdown-btn'),
             statusDot: $('#connection-status .status-dot'), userAvatar: $('#user-avatar'), dropdownAvatar: $('#user-dropdown-avatar'), dropdownName: $('#user-dropdown-name'), dropdownEmail: $('#user-dropdown-email'),
             roleSection: $('#user-role-section'), roleIcon: $('#user-role-icon'), roleText: $('#user-role-text'), authDropdownBtnText: $('#auth-dropdown-btn span:last-child'), authDropdownBtnIcon: $('#auth-dropdown-btn .material-symbols-outlined'),
-            searchBtn: $('#global-search-btn'), // PERBAIKAN: Menggunakan ID yang benar
+            searchBtn: $('#global-search-btn'),
         };
     }
     
@@ -1407,4 +1524,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     init();
 });
+
+
+
 

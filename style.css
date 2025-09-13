@@ -1,5 +1,5 @@
 /* =======================================================
- * PKP Styles — v6.0 (Pembaruan Responsif & UX)
+ * PKP Styles — v7.0 (Pembaruan Pop-up Profesional)
  * ======================================================= */
 
  :root {
@@ -901,6 +901,98 @@
     width: 100%;
   }
   
+  /* == PEMBARUAN: Custom Select (Pengganti Dropdown Bawaan) == */
+  .custom-select-wrapper {
+    position: relative;
+    width: 100%;
+    font-size: .9rem;
+  }
+  
+  .custom-select-trigger {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: .6rem 2.5rem .6rem .8rem;
+    transition: border-color .2s, box-shadow .2s;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .custom-select-trigger::after {
+    content: 'unfold_more';
+    font-family: 'Material Symbols Outlined';
+    font-weight: 400;
+    font-style: normal;
+    font-size: 24px;
+    position: absolute;
+    right: .5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    transition: transform .2s;
+    pointer-events: none; /* Allows click through to the trigger */
+  }
+  
+  .custom-select-wrapper.open .custom-select-trigger::after {
+    transform: translateY(-50%) rotate(180deg);
+  }
+  
+  .custom-select-wrapper.open .custom-select-trigger {
+    border-color: var(--info);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 20%, transparent);
+  }
+  
+  .custom-select-options {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 1050; /* Above other content, below modal */
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    max-height: 200px;
+    overflow-y: auto;
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    transform-origin: top center;
+  }
+  
+  .custom-select-wrapper.open .custom-select-options {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+  }
+  
+  .custom-select-option {
+    padding: .75rem 1rem;
+    cursor: pointer;
+    transition: background-color .2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .custom-select-option:hover {
+    background-color: var(--bg);
+  }
+  
+  .custom-select-option.selected {
+    background-color: var(--info);
+    color: #fff;
+    font-weight: 500;
+  }
+
   .form-grid-invoice {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1414,4 +1506,4 @@
       gap: .75rem;
     }
   }
-  
+
