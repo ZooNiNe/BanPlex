@@ -72,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return formattedString ? parseFloat(String(formattedString).replace(/\./g, '').replace(',', '.')) : 0;
     }
     
-    // ===== PEMBARUAN: Fungsi untuk Pop-up Select Kustom =====
     function createCustomSelect(selectElement) {
         if (!selectElement || selectElement.parentElement.classList.contains('custom-select-wrapper')) return;
         const wrapper = document.createElement('div');
@@ -115,7 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         trigger.addEventListener('click', (e) => {
             e.stopPropagation();
-            // Close other selects before opening this one
             $$('.custom-select-wrapper.open').forEach(openWrapper => {
                 if(openWrapper !== wrapper) openWrapper.classList.remove('open');
             });
@@ -129,11 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const appState = {
         currentUser: null, userRole: 'Guest', roleUnsub: null,
         activePage: localStorage.getItem('lastActivePage') || 'dashboard',
-        editingInvoiceId: null, creditors: [], projects: [], stockItems: [], workers: [],
-        currentInvoiceItems: [], digitalEnvelopes: null,
-        cachedSuggestions: { itemNames: new Set() },
-        attendanceDate: todayStr(),
-        reports: { expenseChart: null }
+        creditors: [], projects: [], stockItems: [], workers: [],
+        digitalEnvelopes: null,
+        notifications: [],
+        notifUnsub: null,
     };
     
     // ===== Inisialisasi Firebase & Referensi =====
@@ -151,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stockItemsCol = collection(db, 'teams', TEAM_ID, 'stock_items');
     const stockTransactionsCol = collection(db, 'teams', TEAM_ID, 'stock_transactions');
     const digitalEnvelopesDoc = doc(db, 'teams', TEAM_ID, 'envelopes', 'main_budget');
+    const notificationsCol = collection(db, 'teams', TEAM_ID, 'notifications');
 
     // ===== Sistem Toast & Modal =====
     let popupTimeout;
@@ -249,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (type === 'newWorker' || type === 'editWorker') {
              formatRupiahInput($('#worker-wage'));
-             createCustomSelect($('#worker-project')); // PEMBARUAN DI SINI
+             createCustomSelect($('#worker-project'));
              modalEl.querySelector('#worker-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 handleSaveWorker(data.id);
@@ -262,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
              });
         }
         if (type === 'recordStockUsage') {
-            createCustomSelect($('#usage-item')); // PEMBARUAN DI SINI
+            createCustomSelect($('#usage-item'));
             modalEl.querySelector('#stock-usage-form')?.addEventListener('submit', handleRecordStockUsage);
         }
     }
@@ -277,9 +275,127 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     }
 
+    // ===== Logika Notifikasi Profesional =====
+    async function createNotification(type, data = {}) {
+        if (!appState.currentUser) return;
+        
+        let notifData = {
+            type,
+            timestamp: serverTimestamp(),
+            readBy: [appState.currentUser.uid],
+            createdBy: {
+                uid: appState.currentUser.uid,
+                name: appState.currentUser.displayName || 'Seseorang',
+            },
+            message: '',
+            targetId: data.id || null,
+        };
+
+        switch (type) {
+            case 'newUser':
+                notifData.message = `${data.name} (${data.email}) telah bergabung dan menunggu persetujuan.`;
+                notifData.targetId = data.uid;
+                break;
+            case 'newInvoice':
+                notifData.message = `${notifData.createdBy.name} membuat faktur baru #${data.invoiceNumber} sebesar ${fmtIDR(data.totalAmount)}.`;
+                break;
+            case 'newPayment':
+                 notifData.message = `${notifData.createdBy.name} membayar tagihan #${data.invoiceNumber} sebesar ${fmtIDR(data.amount)}.`;
+                break;
+            case 'newFunding':
+                 notifData.message = `${notifData.createdBy.name} mencatat pemasukan baru "${data.description}" sebesar ${fmtIDR(data.amount)}.`;
+                break;
+            case 'userApproved':
+                 notifData.message = `${notifData.createdBy.name} menyetujui ${data.name} sebagai anggota tim.`;
+                break;
+            default:
+                return;
+        }
+
+        try {
+            // Hanya buat notifikasi jika dibuat oleh Admin atau Owner
+            if (appState.userRole === 'Admin' || appState.userRole === 'Owner') {
+                await addDoc(notificationsCol, notifData);
+            }
+        } catch (error) {
+            console.error("Gagal membuat notifikasi:", error);
+        }
+    }
+
+    function listenForNotifications() {
+        if (appState.notifUnsub) appState.notifUnsub();
+        if (!appState.currentUser) return;
+
+        const q = query(notificationsCol, orderBy('timestamp', 'desc'), limit(30));
+        appState.notifUnsub = onSnapshot(q, (snapshot) => {
+            appState.notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderNotifications();
+        });
+    }
+
+    function renderNotifications() {
+        const dropdownBody = $('#notification-dropdown .dropdown-body');
+        const badge = $('#notification-badge');
+        if (!dropdownBody || !badge) return;
+
+        const unreadCount = appState.notifications.filter(n => !n.readBy.includes(appState.currentUser.uid)).length;
+
+        badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+        badge.classList.toggle('hidden', unreadCount === 0);
+
+        if (appState.notifications.length === 0) {
+            dropdownBody.innerHTML = '<div class="empty-state">Belum ada notifikasi baru.</div>';
+            return;
+        }
+
+        dropdownBody.innerHTML = appState.notifications.map(n => {
+            const isRead = n.readBy.includes(appState.currentUser.uid);
+            const time = n.timestamp ? new Date(n.timestamp.seconds * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+            return `
+                <div class="notification-item ${isRead ? 'read' : ''}" data-id="${n.id}" data-target-uid="${n.targetId || ''}">
+                    <div class="notification-icon"><span class="material-symbols-outlined">${n.type === 'newUser' ? 'person_add' : 'notifications'}</span></div>
+                    <div class="notification-content">
+                        <p>${n.message}</p>
+                        <small>${time}</small>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        $$('.notification-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                const notifId = item.dataset.id;
+                const targetUid = item.dataset.targetUid;
+                
+                await markNotificationAsRead(notifId);
+                
+                if (targetUid) {
+                    appState.activePage = 'pengaturan';
+                    renderUI();
+                }
+            });
+        });
+    }
+
+    async function markNotificationAsRead(notifId) {
+        if (!appState.currentUser) return;
+        const notif = appState.notifications.find(n => n.id === notifId);
+        if (notif && !notif.readBy.includes(appState.currentUser.uid)) {
+            try {
+                const notifRef = doc(notificationsCol, notifId);
+                await updateDoc(notifRef, {
+                    readBy: [...notif.readBy, appState.currentUser.uid]
+                });
+            } catch (error) {
+                console.error("Gagal menandai notifikasi:", error);
+            }
+        }
+    }
+
     // ===== Logika Otentikasi & State Management =====
     onAuthStateChanged(auth, async (user) => {
         if (appState.roleUnsub) appState.roleUnsub();
+        if (appState.notifUnsub) appState.notifUnsub();
         
         if (user) {
             appState.currentUser = user;
@@ -289,7 +405,10 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const docSnap = await getDoc(userDocRef);
                 let currentRole = 'Pending';
+                let isNewUser = false;
+
                 if (!docSnap.exists()) {
+                    isNewUser = true;
                     currentRole = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() ? 'Owner' : 'Pending';
                     await setDoc(userDocRef, {
                         email: user.email, name: user.displayName, photoURL: user.photoURL,
@@ -298,12 +417,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                      currentRole = docSnap.data()?.role || 'Pending';
                 }
+
                 if ((user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() && currentRole !== 'Owner') {
                     await updateDoc(userDocRef, { role: 'Owner' });
                     currentRole = 'Owner';
                 }
                 
                 appState.userRole = currentRole;
+                
+                if (isNewUser && currentRole === 'Pending') {
+                    await createNotification('newUser', { 
+                        name: user.displayName, 
+                        email: user.email, 
+                        uid: user.uid 
+                    });
+                }
+                
+                listenForNotifications();
                 await renderUI();
 
                 appState.roleUnsub = onSnapshot(userDocRef, snap => {
@@ -484,7 +614,6 @@ document.addEventListener('DOMContentLoaded', () => {
         formatRupiahInput($('#fs-amount'));
         createCustomSelect($('#fs-type'));
         $('#fs-type').addEventListener('change', () => $('#interest-fields-wrapper').classList.toggle('hidden', $('#fs-type').value !== 'Pinjaman (Dengan Bunga)'));
-        // PERBAIKAN: Menggunakan $$ untuk memilih beberapa elemen
         $$('#fs-amount, #fs-interest-rate, #fs-tenor').forEach(el => el.addEventListener('input', calculateTotalRepayable));
         $('#funding-source-form').addEventListener('submit', handleSaveFundingSource);
         fetchAndDisplayFundingSources();
@@ -503,20 +632,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ===== PEMBARUAN: Logika Simpan Pemasukan dengan Transaksi & Integrasi =====
     async function handleSaveFundingSource(e) {
         e.preventDefault();
         const form = e.target;
         const submitBtn = form.querySelector('button[type="submit"]');
 
-        // Nonaktifkan tombol untuk mencegah klik ganda
         submitBtn.disabled = true;
         
-        // Penjaga untuk memastikan pengguna sudah terautentikasi sebelum melanjutkan
         if (!appState.currentUser) {
             toast('error', 'Sesi tidak valid. Silakan muat ulang halaman.');
             console.error("Attempted to save funding source without a valid user.");
-            submitBtn.disabled = false; // Aktifkan kembali tombol
+            submitBtn.disabled = false;
             return;
         }
 
@@ -526,7 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if(!principal || principal <= 0){
                 toast('error', 'Jumlah pemasukan harus lebih dari nol.');
-                return; // Keluar dari fungsi jika validasi gagal
+                return;
             }
 
             const data = {
@@ -544,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tenorMonths = parseInt(form.querySelector('#fs-tenor').value) || 0;
                 if (annualRate <= 0 || tenorMonths <= 0) {
                     toast('error', 'Bunga dan tenor harus diisi untuk pinjaman berbunga.');
-                    return; // Keluar dari fungsi jika validasi gagal
+                    return;
                 }
                 const totalInterest = principal * (annualRate / 100) * (tenorMonths / 12);
                 data.interestRate = annualRate; data.tenorInMonths = tenorMonths;
@@ -554,15 +680,11 @@ document.addEventListener('DOMContentLoaded', () => {
             toast('loading', 'Menyimpan & mengintegrasikan data...');
 
             await runTransaction(db, async (transaction) => {
-                // --- PERBAIKAN DIMULAI DI SINI ---
-                
-                // 1. Lakukan SEMUA OPERASI BACA terlebih dahulu
                 let envDoc;
                 if (type === 'Pencairan Termin') {
                     envDoc = await transaction.get(digitalEnvelopesDoc);
                 }
 
-                // 2. Lakukan SEMUA OPERASI TULIS setelahnya
                 const newFundingDocRef = doc(collection(db, 'teams', TEAM_ID, 'funding_sources'));
                 transaction.set(newFundingDocRef, data);
 
@@ -575,18 +697,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         transaction.update(digitalEnvelopesDoc, { unallocatedFunds: newUnallocated });
                     }
                 }
-                // --- PERBAIKAN SELESAI ---
+            });
+            
+            await createNotification('newFunding', {
+                description: data.description,
+                amount: data.amount
             });
 
             toast('success', 'Pemasukan berhasil disimpan dan terintegrasi.');
-            await fetchDigitalEnvelopes(); // Update state amplop digital
-            renderPemasukanPage($('#page-pemasukan-pinjaman')); // Re-render halaman
+            await fetchDigitalEnvelopes();
+            renderPemasukanPage($('#page-pemasukan-pinjaman'));
             
         } catch (error) {
             toast('error', 'Gagal menyimpan data.');
             console.error("Error saving funding source:", error);
         } finally {
-            // Pastikan tombol diaktifkan kembali
              if(submitBtn) submitBtn.disabled = false;
         }
     }
@@ -609,7 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!envelopes) { container.innerHTML = `<div class="card card-pad"><p>Memuat data anggaran...</p></div>`; return; }
         container.innerHTML = `<div class="section-head"><h4>Alokasi & Anggaran</h4></div><div class="allocation-grid"><div class="card card-pad"><h5 class="form-section-title">Alokasikan Dana</h5><p class="section-subtitle">Distribusikan dana yang belum teralokasi ke dalam amplop digital.</p><form id="allocation-form"><div class="form-group"><label>Dana Tersedia</label><input type="text" value="${fmtIDR(envelopes.unallocatedFunds)}" disabled></div><div class="form-group"><label for="alloc-amount">Jumlah</label><input type="text" id="alloc-amount" placeholder="0" required></div><div class="form-group"><label for="alloc-to-envelope">Alokasikan Ke</label><select id="alloc-to-envelope" required><option value="operational">Operasional</option><option value="debtPayment">Pembayaran Hutang</option><option value="reserve">Dana Cadangan</option><option value="profit">Laba Proyek</option></select></div><button type="submit" class="btn btn-primary" style="margin-top:1rem">Alokasikan Dana</button></form></div><div class="card card-pad"><h5 class="form-section-title">Ringkasan Amplop</h5><div class="envelope-grid"><div class="envelope-card"><h6>Operasional</h6><div class="amount">${fmtIDR(envelopes.operational)}</div></div><div class="envelope-card"><h6>Hutang</h6><div class="amount">${fmtIDR(envelopes.debtPayment)}</div></div><div class="envelope-card"><h6>Cadangan</h6><div class="amount">${fmtIDR(envelopes.reserve)}</div></div><div class="envelope-card"><h6>Laba</h6><div class="amount">${fmtIDR(envelopes.profit)}</div></div></div></div></div>`;
         formatRupiahInput($('#alloc-amount'));
-        createCustomSelect($('#alloc-to-envelope')); // PEMBARUAN DI SINI
+        createCustomSelect($('#alloc-to-envelope'));
         $('#allocation-form').addEventListener('submit', handleAllocateFunds);
     }
     
@@ -657,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
         container.innerHTML = `<div class="card card-pad"><form id="invoice-form"><div class="form-section"><h5 class="form-section-title">Informasi Faktur</h5><div class="form-grid-invoice"><div class="form-group"><label for="inv-date">Tanggal</label><input type="date" id="inv-date" value="${todayStr()}" required></div><div class="form-group"><label>No. Faktur</label><input type="text" id="inv-number" value="${invoiceNumber}" disabled></div><div class="form-group span-2"><label for="inv-creditor">Kreditur</label><div class="input-with-button"><select id="inv-creditor" required><option value="">Pilih Kreditur...</option>${appState.creditors.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select><button type="button" id="add-creditor-btn" class="icon-btn" title="Tambah Kreditur Baru"><span class="material-symbols-outlined">add</span></button></div></div></div></div><div class="form-section"><h5 class="form-section-title">Item Pengeluaran</h5><div id="invoice-item-list" class="invoice-item-list"></div><div class="form-grid-item"><div class="form-group span-2" id="item-name-group"><label for="item-name">Nama Barang/Jasa</label><input type="text" id="item-name" autocomplete="off" placeholder="Contoh: Semen Tiga Roda"><div class="autocomplete-items" id="autocomplete-list"></div></div><div class="form-group"><label for="item-qty">Qty</label><input type="number" id="item-qty" placeholder="0"></div><div class="form-group"><label for="item-unit">Satuan</label><input type="text" id="item-unit" placeholder="sak / m3 / ls"></div><div class="form-group"><label for="item-price">Harga Satuan</label><input type="text" id="item-price" placeholder="0"></div><div class="form-group"><label>Total</label><input type="text" id="item-total" disabled placeholder="Otomatis"></div></div><button type="button" id="add-item-btn" class="btn btn-secondary" style="margin-top: 1rem;"><span class="material-symbols-outlined">add</span>Tambah Item</button></div><div class="form-section"><h5 class="form-section-title">Lampiran</h5><div class="form-grid-invoice"><div class="form-group"><label for="inv-photo" class="custom-file-upload"><span class="material-symbols-outlined">upload_file</span>Upload Foto Invoice</label><input type="file" id="inv-photo" accept="image/*"><span id="inv-photo-name" class="file-name"></span></div><div class="form-group"><label for="del-note-photo" class="custom-file-upload"><span class="material-symbols-outlined">upload_file</span>Upload Surat Jalan</label><input type="file" id="del-note-photo" accept="image/*"><span id="del-note-photo-name" class="file-name"></span></div></div></div><div class="form-group full" style="margin-top:2rem;border-top:1px solid var(--line);padding-top:1.5rem;"><div class="invoice-summary">Total Faktur: <strong id="invoice-total-amount">Rp 0,00</strong></div><button type="submit" class="btn btn-primary">Simpan Faktur</button></div></form></div>`;
         formatRupiahInput($('#item-price'));
-        createCustomSelect($('#inv-creditor')); // PEMBARUAN DI SINI
+        createCustomSelect($('#inv-creditor'));
         $('#add-creditor-btn').addEventListener('click', () => createModal('newCreditor'));
         $('#add-item-btn').addEventListener('click', handleAddItemToInvoice);
         $('#invoice-form').addEventListener('submit', (e) => handleSaveInvoice(e, category));
@@ -733,6 +858,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 createdBy: appState.currentUser.email, createdAt: serverTimestamp(),
             };
             const docRef = await addDoc(invoicesCol, invoiceData);
+            
+            await createNotification('newInvoice', {
+                id: docRef.id,
+                invoiceNumber: invoiceData.invoiceNumber,
+                totalAmount: invoiceData.totalAmount
+            });
 
             if (category === 'material') {
                 await recordStockInFromInvoice(invoiceData.items, docRef.id);
@@ -834,11 +965,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handlePayment(invoiceId, paymentAmount, paymentDate) {
         toast('loading', 'Memproses pembayaran...');
         try {
+            let invoiceNumber = '';
             await runTransaction(db, async (transaction) => {
                 const invoiceRef = doc(invoicesCol, invoiceId);
                 const invoiceDoc = await transaction.get(invoiceRef);
                 if (!invoiceDoc.exists()) throw "Faktur tidak ditemukan!";
                 const data = invoiceDoc.data();
+                invoiceNumber = data.invoiceNumber;
                 const newAmountPaid = data.amountPaid + paymentAmount;
                 const isFullyPaid = newAmountPaid >= data.totalAmount;
                 const paymentRef = doc(collection(invoiceRef, 'payments'));
@@ -848,6 +981,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 transaction.update(invoiceRef, { amountPaid: newAmountPaid, isFullyPaid: isFullyPaid });
             });
+
+            await createNotification('newPayment', {
+                id: invoiceId,
+                invoiceNumber: invoiceNumber,
+                amount: paymentAmount
+            });
+
             toast('success', 'Pembayaran berhasil disimpan.');
             renderTagihanPage($('#page-tagihan'));
         } catch (error) { toast('error', 'Gagal memproses pembayaran.'); console.error(error); }
@@ -1332,11 +1472,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         container.innerHTML = `<div class="section-head"><h4>Manajemen Tim</h4></div><div class="card card-pad"><div class="skeleton" style="height:80px;margin-bottom:1rem;"></div><div class="skeleton" style="height:80px;"></div></div></div>`;
         try {
-            const memberSnap = await getDocs(membersCol);
+            const memberSnap = await getDocs(query(membersCol, orderBy('createdAt', 'desc')));
             const members = memberSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            container.innerHTML = `<div class="section-head"><h4>Manajemen Tim</h4><p class="section-subtitle">Kelola peran dan akses anggota tim Anda.</p></div><div class="member-card-pro-list">
-                ${members.map(member => `<div class="member-card-pro"><img src="${member.photoURL||`https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="member-card-pro__avatar" /><div class="member-card-pro__info"><strong class="member-card-pro__name">${member.name||'N/A'}</strong><span class="member-card-pro__email">${member.email}</span></div><div class="member-card-pro__role"><span class="badge">${member.role}</span></div><div class="member-card-pro__actions">${(appState.userRole==='Owner'&&member.email!==OWNER_EMAIL)||(appState.userRole==='Admin'&&member.role!=='Owner')?`<button class="icon-btn action-menu-btn" data-userid="${member.id}"><span class="material-symbols-outlined">more_vert</span></button><div class="actions-dropdown hidden" id="actions-for-${member.id}"><div class="form-group"><label>Ubah Peran</label><div id="role-select-${member.id}" class="custom-select-wrapper"><select class="role-select" data-userid="${member.id}"><option value="Pending" ${member.role==='Pending'?'selected':''}>Pending</option><option value="Viewer" ${member.role==='Viewer'?'selected':''}>Viewer</option><option value="Editor" ${member.role==='Editor'?'selected':''}>Editor</option>${appState.userRole==='Owner'?`<option value="Admin" ${member.role==='Admin'?'selected':''}>Admin</option>`:''}</select></div></div><button class="btn btn-danger btn-sm btn-remove-member" data-userid="${member.id}" data-name="${member.name}">Hapus Anggota</button></div>`:''}</div></div>`).join('')}
-            </div>`;
+
+            const pendingMembers = members.filter(m => m.role === 'Pending');
+            const approvedMembers = members.filter(m => m.role !== 'Pending');
+
+            container.innerHTML = `
+                <div class="section-head">
+                    <h4>Manajemen Tim</h4>
+                    <p class="section-subtitle">Kelola peran dan akses anggota tim Anda.</p>
+                </div>
+                
+                ${pendingMembers.length > 0 ? `
+                <div class="card card-pad approval-section">
+                    <h5 class="form-section-title">Menunggu Persetujuan (${pendingMembers.length})</h5>
+                    <div class="member-card-pro-list">
+                    ${pendingMembers.map(member => `
+                        <div class="member-card-pro status-pending">
+                            <img src="${member.photoURL||`https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="member-card-pro__avatar" />
+                            <div class="member-card-pro__info">
+                                <strong class="member-card-pro__name">${member.name||'N/A'}</strong>
+                                <span class="member-card-pro__email">${member.email}</span>
+                            </div>
+                            <div class="member-card-pro__actions">
+                                <button class="btn btn-danger btn-sm btn-remove-member" data-userid="${member.id}" data-name="${member.name}"><span class="material-symbols-outlined">delete</span> Tolak</button>
+                                <button class="btn btn-success btn-sm btn-approve-member" data-userid="${member.id}"><span class="material-symbols-outlined">check</span> Setujui</button>
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>` : ''}
+
+                <div class="card card-pad" style="margin-top: 1.5rem;">
+                    <h5 class="form-section-title">Anggota Tim Aktif</h5>
+                    <div class="member-card-pro-list">
+                    ${approvedMembers.map(member => `
+                        <div class="member-card-pro">
+                            <img src="${member.photoURL||`https://placehold.co/50x50/e2e8f0/64748b?text=${(member.name||'U')[0]}`}" alt="Avatar" class="member-card-pro__avatar" />
+                            <div class="member-card-pro__info">
+                                <strong class="member-card-pro__name">${member.name||'N/A'}</strong>
+                                <span class="member-card-pro__email">${member.email}</span>
+                            </div>
+                            <div class="member-card-pro__role"><span class="badge">${member.role}</span></div>
+                            <div class="member-card-pro__actions">
+                                ${(appState.userRole==='Owner'&&member.email!==OWNER_EMAIL)||(appState.userRole==='Admin'&&member.role!=='Owner')?`
+                                <button class="icon-btn action-menu-btn" data-userid="${member.id}"><span class="material-symbols-outlined">more_vert</span></button>
+                                <div class="actions-dropdown hidden" id="actions-for-${member.id}">
+                                    <div class="form-group">
+                                        <label>Ubah Peran</label>
+                                        <div id="role-select-${member.id}" class="custom-select-wrapper">
+                                            <select class="role-select" data-userid="${member.id}">
+                                                <option value="Viewer" ${member.role==='Viewer'?'selected':''}>Viewer</option>
+                                                <option value="Editor" ${member.role==='Editor'?'selected':''}>Editor</option>
+                                                ${appState.userRole==='Owner'?`<option value="Admin" ${member.role==='Admin'?'selected':''}>Admin</option>`:''}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-danger btn-sm btn-remove-member" data-userid="${member.id}" data-name="${member.name}">Hapus Anggota</button>
+                                </div>`:''}
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>
+            `;
             
             $$('.action-menu-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -1348,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             $$('.role-select').forEach(select => {
-                const customSelect = createCustomSelect(select); // PEMBARUAN DI SINI
+                createCustomSelect(select);
                 select.addEventListener('change', async (e) => {
                     const newRole = e.target.value; const userId = e.target.dataset.userid;
                     toast('loading', `Mengubah peran...`);
@@ -1371,8 +1569,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 });
             });
+            
+            $$('.btn-approve-member').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const userId = e.currentTarget.dataset.userid;
+                    const member = members.find(m => m.id === userId);
+                    toast('loading', 'Menyetujui anggota...');
+                    try {
+                        await updateDoc(doc(membersCol, userId), { role: 'Viewer' });
+                        await createNotification('userApproved', { name: member.name });
+                        toast('success', 'Anggota berhasil disetujui.');
+                        renderPengaturanPage(container);
+                    } catch (error) {
+                        toast('error', 'Gagal menyetujui anggota.');
+                    }
+                });
+            });
+
         } catch (error) { console.error("Error fetching team members:", error); container.innerHTML = `<div class="card card-pad card--danger"><h4>Gagal Memuat Data Tim</h4></div>`; }
     }
+
 
     async function handleDeleteMember(userId) {
         toast('loading', 'Menghapus anggota...');
@@ -1452,7 +1668,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 $$('.actions-dropdown').forEach(d => d.classList.add('hidden'));
             }
             
-            // PEMBARUAN: Menutup semua custom select pop-up
             if (!e.target.closest('.custom-select-wrapper')) {
                 $$('.custom-select-wrapper.open').forEach(wrapper => wrapper.classList.remove('open'));
             }
@@ -1524,7 +1739,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     init();
 });
-
-
-
 
