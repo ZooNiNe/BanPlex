@@ -17,21 +17,26 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 
-  <!-- Stylesheet -->
+  <!-- Chart.js (untuk Halaman Monitoring) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+
+  <!-- Styles -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+
   <div id="app-shell">
-    <!-- Sidebar -->
+    <!-- Sidebar Navigasi -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-head">
-        <img class="brand-logo-sidebar" src="logo-main.png" alt="Logo" />
+        <img src="logo-main.png" alt="Logo" class="brand-logo-sidebar">
         <div class="brand-text-sidebar">
-          <strong>Portal Proyek</strong>
-          <small>Manajemen Keuangan</small>
+          <strong>Keuangan Proyek</strong>
+          <span>Menak Grup</span>
         </div>
       </div>
-
       <nav class="nav-container">
         <button class="nav-item active" data-nav="dashboard">
           <span class="material-symbols-outlined">dashboard</span>
@@ -42,22 +47,27 @@
             <span class="nav-text">Pemasukan & Pinjaman</span>
         </button>
         <button class="nav-item" data-nav="alokasi-anggaran" data-role="Admin,Owner">
-            <span class="material-symbols-outlined">inventory</span>
-            <span class="nav-text">Alokasi & Anggaran</span>
+            <span class="material-symbols-outlined">account_tree</span>
+            <span class="nav-text">Alokasi Anggaran</span>
         </button>
         <button class="nav-item" data-nav="input-data" data-role="Editor,Admin,Owner">
           <span class="material-symbols-outlined">edit_document</span>
           <span class="nav-text">Input Pengeluaran</span>
         </button>
         <button class="nav-item" data-nav="absensi" data-role="Editor,Admin,Owner">
-          <span class="material-symbols-outlined">group</span>
+          <span class="material-symbols-outlined">person_check</span>
           <span class="nav-text">Absensi</span>
         </button>
-        <button class="nav-item" data-nav="tagihan" data-role="Editor,Admin,Owner,Viewer">
+        <button class="nav-item" data-nav="manajemen-stok" data-role="Editor,Admin,Owner">
+          <span class="material-symbols-outlined">inventory_2</span>
+          <span class="nav-text">Manajemen Stok</span>
+        </button>
+        <button class="nav-item" data-nav="tagihan" data-role="Viewer,Editor,Admin,Owner">
           <span class="material-symbols-outlined">receipt_long</span>
           <span class="nav-text">Tagihan</span>
         </button>
-        <button class="nav-item" data-nav="monitoring">
+        <!-- PERUBAHAN: data-nav diubah menjadi "laporan" -->
+        <button class="nav-item" data-nav="laporan" data-role="Viewer,Editor,Admin,Owner">
           <span class="material-symbols-outlined">monitoring</span>
           <span class="nav-text">Laporan</span>
         </button>
@@ -66,58 +76,55 @@
           <span class="nav-text">Pengaturan</span>
         </button>
       </nav>
-
       <div class="sidebar-footer">
         <button id="auth-btn" class="nav-item">
-          <span class="material-symbols-outlined">login</span>
-          <span class="nav-text">Login</span>
+          <span class="material-symbols-outlined">logout</span>
+          <span class="nav-text">Keluar</span>
         </button>
       </div>
     </aside>
 
-    <!-- Content Wrapper -->
+    <!-- Konten Utama -->
     <div class="content-wrapper">
       <header class="main-header">
         <div class="header-left">
-          <button id="btnOpenNav" class="icon-btn" aria-label="Buka Menu">
+          <button id="btnOpenNav" class="icon-btn" aria-label="Buka Navigasi">
             <span class="material-symbols-outlined">menu</span>
           </button>
+          <div id="connection-status" class="connection-status">
+             <div class="status-dot"></div>
+          </div>
         </div>
 
         <div class="header-actions">
-          <div id="connection-status" class="connection-status" title="Status Koneksi">
-            <span class="status-dot dot--red"></span>
-          </div>
-
-          <button id="theme-toggle-btn" class="icon-btn" aria-label="Ganti Tema">
-            <span class="material-symbols-outlined">light_mode</span>
+          <button id="global-search-btn" class="icon-btn" aria-label="Cari">
+            <span class="material-symbols-outlined">search</span>
           </button>
-
           <div class="notification-wrapper">
             <button id="notification-btn" class="icon-btn" aria-label="Notifikasi">
               <span class="material-symbols-outlined">notifications</span>
-              <div class="notification-badge hidden"></div>
+              <div id="notification-badge" class="notification-badge hidden"></div>
             </button>
             <div id="notification-dropdown" class="dropdown-panel hidden">
               <div class="dropdown-header">Notifikasi</div>
               <div class="dropdown-body">
-                <p class="empty-state">Belum ada notifikasi baru.</p>
+                <div class="empty-state">Belum ada notifikasi baru.</div>
               </div>
             </div>
           </div>
-
+          
           <div class="user-profile-wrapper">
             <button id="user-profile-btn" class="user-profile-btn" aria-label="Profil Pengguna">
-              <img id="user-avatar" src="https://placehold.co/40x40/e2e8f0/64748b?text=G" alt="Avatar" />
+                <img id="user-avatar" src="https://placehold.co/40x40/e2e8f0/64748b?text=G" alt="Avatar Pengguna">
             </button>
             <div id="user-dropdown" class="dropdown-panel user-dropdown hidden">
                 <div class="user-dropdown-body">
+                    <img id="user-dropdown-avatar" src="https://placehold.co/80x80/e2e8f0/64748b?text=G" alt="Avatar Pengguna">
                     <div class="user-info-main">
-                        <img id="user-dropdown-avatar" src="https://placehold.co/80x80/e2e8f0/64748b?text=G" alt="Avatar Pengguna" />
                         <strong id="user-dropdown-name">Guest</strong>
                         <span id="user-dropdown-email">Silakan login</span>
                     </div>
-                    <div class="user-info-role hidden" id="user-role-section">
+                     <div id="user-role-section" class="user-info-role hidden">
                         <span class="material-symbols-outlined" id="user-role-icon"></span>
                         <span id="user-role-text"></span>
                     </div>
@@ -139,6 +146,11 @@
     </div>
   </div>
   
+  <!-- Floating Action Button (FAB) -->
+  <button id="fab" class="fab hidden" aria-label="Tambah Transaksi" data-role="Editor,Admin,Owner">
+    <span class="material-symbols-outlined">add</span>
+  </button>
+
   <!-- Scrim (Overlay untuk sidebar mobile) -->
   <div id="scrim" class="scrim"></div>
 
@@ -153,8 +165,7 @@
   <!-- Container untuk Modal Dinamis -->
   <div id="modal-container"></div>
   
-  <!-- Firebase v9+ modular sebagai module -->
-  <script type="module" src="script.js"></script>
+  <!-- JavaScript -->
+  <script src="script.js" type="module"></script>
 </body>
 </html>
-
