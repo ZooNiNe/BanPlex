@@ -149,6 +149,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const digitalEnvelopesDoc = doc(db, 'teams', TEAM_ID, 'envelopes', 'main_budget');
     const notificationsCol = collection(db, 'teams', TEAM_ID, 'notifications');
 
+    const NAV_PAGES = [
+        { id: 'dashboard', name: 'Dashboard' },
+        { id: 'pemasukan-pinjaman', name: 'Pemasukan & Pinjaman' },
+        { id: 'alokasi-anggaran', name: 'Alokasi Anggaran' },
+        { id: 'pembayaran-digital', name: 'Pembayaran Digital' },
+        { id: 'pembelian', name: 'Pembelian' },
+        { id: 'input-data', name: 'Input Pengeluaran' },
+        { id: 'absensi', name: 'Absensi' },
+        { id: 'manajemen-stok', name: 'Manajemen Stok' },
+        { id: 'tagihan', name: 'Tagihan' },
+        { id: 'laporan', name: 'Laporan' },
+        { id: 'pengaturan', name: 'Pengaturan' },
+    ];
+
     // ===== Sistem Toast & Modal (Refactored) =====
     let popupTimeout;
     function toast(kind, text, duration = 3200) {
@@ -461,11 +475,13 @@ document.addEventListener('DOMContentLoaded', () => {
             'dashboard': renderDashboardPage,
             'pemasukan-pinjaman': renderPemasukanPage, 
             'alokasi-anggaran': renderAlokasiPage,
-            'input-data': renderInputDataPage, 
-            'pengaturan': renderPengaturanPage, 
+            'pembayaran-digital': renderPembayaranDigitalPage,
+            'pembelian': renderPembelianPage,
+            'input-data': renderInputDataPage,
+            'pengaturan': renderPengaturanPage,
             'tagihan': renderTagihanPage,
-            'laporan': renderLaporanPage, 
-            'absensi': renderAbsensiPage, 
+            'laporan': renderLaporanPage,
+            'absensi': renderAbsensiPage,
             'manajemen-stok': renderManajemenStokPage,
         };
         const renderer = pageRenderers[appState.activePage];
@@ -1964,7 +1980,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Stock usage error:", error);
         }
     }
-    
+
+    async function renderPembayaranDigitalPage(container) {
+        container.innerHTML = `<div class="card card-pad">Halaman Pembayaran Digital dalam pengembangan.</div>`;
+    }
+
+    async function renderPembelianPage(container) {
+        container.innerHTML = `<div class="card card-pad">Halaman Pembelian dalam pengembangan.</div>`;
+    }
+
     async function renderAlokasiPage(container) {
         const envelopes = appState.digitalEnvelopes;
         container.innerHTML = `
@@ -2209,19 +2233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleGlobalSearch(e) {
         const searchTerm = e.target.value.toLowerCase();
         const resultsContainer = $('#search-results');
-        const navItems = [
-            { id: 'dashboard', name: 'Dashboard' },
-            { id: 'pemasukan-pinjaman', name: 'Pemasukan & Pinjaman' },
-            { id: 'alokasi-anggaran', name: 'Alokasi Anggaran' },
-            { id: 'input-data', name: 'Input Pengeluaran' },
-            { id: 'absensi', name: 'Absensi Pekerja' },
-            { id: 'tagihan', name: 'Manajemen Tagihan' },
-            { id: 'manajemen-stok', name: 'Manajemen Stok' },
-            { id: 'laporan', name: 'Laporan Keuangan' },
-            { id: 'pengaturan', name: 'Pengaturan' },
-        ];
-
-        const filteredItems = navItems.filter(item => item.name.toLowerCase().includes(searchTerm));
+        const filteredItems = NAV_PAGES.filter(item => item.name.toLowerCase().includes(searchTerm));
         
         if (filteredItems.length > 0) {
             resultsContainer.innerHTML = filteredItems.map(item => 
@@ -2254,8 +2266,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function injectPageTemplates() {
         const container = $('.page-container');
         if (!container || container.childElementCount > 0) return;
-        const pages = ['dashboard', 'pemasukan-pinjaman', 'alokasi-anggaran', 'input-data', 'absensi', 'tagihan', 'manajemen-stok', 'laporan', 'pengaturan'];
-        container.innerHTML = pages.map(id => `<main id="page-${id}" class="page"></main>`).join('');
+        container.innerHTML = NAV_PAGES.map(p => `<main id="page-${p.id}" class="page"></main>`).join('');
     }
 
     init();
