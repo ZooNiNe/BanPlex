@@ -198,11 +198,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="modal-body">
                         <div class="modal-actions-bar">
-                            <button id="add-new-creditor-in-modal" class="btn btn-primary">
-                                <span class="material-symbols-outlined">add</span>Tambah Baru
+                            <button id="add-new-creditor-in-modal" class="btn btn-primary" title="Tambah Baru">
+                                <span class="material-symbols-outlined">add</span>
                             </button>
                         </div>
                         <div id="modal-creditors-table-container">
+                            <p>Memuat data...</p>
+                        </div>
+                    </div>
+                </div>`;
+            case 'manageWorkers':
+                return `<div class="modal-content" style="max-width: 900px;">
+                    <div class="modal-header">
+                        <h4>Kelola Data Pekerja</h4>
+                        <button type="button" class="icon-btn" data-close-modal><span class="material-symbols-outlined">close</span></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="modal-actions-bar">
+                             <button id="add-new-worker-in-modal" class="btn btn-primary" title="Tambah Pekerja Baru">
+                                <span class="material-symbols-outlined">person_add</span>
+                            </button>
+                        </div>
+                        <div id="modal-workers-table-container">
                             <p>Memuat data...</p>
                         </div>
                     </div>
@@ -290,6 +307,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 creditorType: data.creditorType, 
                 category: data.category 
             }));
+        }
+        if (type === 'manageWorkers') {
+            renderWorkersCollectionTable($('#modal-workers-table-container'));
+            $('#add-new-worker-in-modal').addEventListener('click', () => createModal('newWorker', {}));
         }
         if (type === 'editFundingSource') {
             formatRupiahInput($('#fs-amount-edit'));
@@ -468,7 +489,40 @@ document.addEventListener('DOMContentLoaded', () => {
             const remainingBudget = fundsReceived - totalExpenses;
             const envelopes = appState.digitalEnvelopes || { unallocatedFunds: 0, debtPayment: 0, operational: 0, reserve: 0, profit: 0 };
 
-            container.innerHTML = `<div class="section-head"><h4>Dashboard Finansial Proyek</h4></div><div class="dashboard-grid"><div class="dashboard-widget"><h5 class="widget-title">Arus Kas (Cashflow)</h5><div class="widget-main-value">${fmtIDR(remainingBudget)}</div><p class="widget-sub-text">Sisa dari Total Dana Diterima (${fmtIDR(fundsReceived)})</p></div><div class="dashboard-widget"><h5 class="widget-title">Dana Belum Dialokasikan</h5><div class="widget-main-value">${fmtIDR(envelopes.unallocatedFunds)}</div><p class="widget-sub-text">Dana dari termin yang siap didistribusikan.</p></div></div><div class="section-head" style="margin-top:2rem"><h4>Saldo Amplop Digital</h4></div><div class="dashboard-grid"><div class="dashboard-widget"><h5 class="widget-title">Operasional</h5><div class="widget-main-value">${fmtIDR(envelopes.operational)}</div></div><div class="dashboard-widget"><h5 class="widget-title">Pembayaran Hutang</h5><div class="widget-main-value">${fmtIDR(envelopes.debtPayment)}</div></div><div class="dashboard-widget"><h5 class="widget-title">Dana Cadangan</h5><div class="widget-main-value">${fmtIDR(envelopes.reserve)}</div></div><div class="dashboard-widget"><h5 class="widget-title">Laba Proyek</h5><div class="widget-main-value">${fmtIDR(envelopes.profit)}</div></div></div><div id="quick-attendance-section" style="margin-top:2rem;"></div>`;
+            container.innerHTML = `<div class="section-head"><h4>Dashboard Finansial Proyek</h4></div>
+            <div class="dashboard-grid">
+                <div class="dashboard-widget interactive" data-nav-target="pemasukan-pinjaman" title="Lihat Pemasukan">
+                    <h5 class="widget-title">Arus Kas (Cashflow)</h5><div class="widget-main-value">${fmtIDR(remainingBudget)}</div>
+                    <p class="widget-sub-text">Sisa dari Total Dana Diterima (${fmtIDR(fundsReceived)})</p>
+                </div>
+                <div class="dashboard-widget interactive" data-nav-target="alokasi-anggaran" title="Alokasikan Dana">
+                    <h5 class="widget-title">Dana Belum Dialokasikan</h5><div class="widget-main-value">${fmtIDR(envelopes.unallocatedFunds)}</div>
+                    <p class="widget-sub-text">Dana dari termin yang siap didistribusikan.</p>
+                </div>
+            </div>
+            <div class="section-head" style="margin-top:2rem"><h4>Saldo Amplop Digital</h4></div>
+            <div class="dashboard-grid">
+                <div class="dashboard-widget"><h5 class="widget-title">Operasional</h5><div class="widget-main-value">${fmtIDR(envelopes.operational)}</div></div>
+                <div class="dashboard-widget interactive" data-nav-target="tagihan" title="Lihat Tagihan">
+                  <h5 class="widget-title">Pembayaran Hutang</h5><div class="widget-main-value">${fmtIDR(envelopes.debtPayment)}</div>
+                </div>
+                <div class="dashboard-widget"><h5 class="widget-title">Dana Cadangan</h5><div class="widget-main-value">${fmtIDR(envelopes.reserve)}</div></div>
+                <div class="dashboard-widget"><h5 class="widget-title">Laba Proyek</h5><div class="widget-main-value">${fmtIDR(envelopes.profit)}</div></div>
+            </div>
+            <div id="quick-attendance-section" style="margin-top:2rem;"></div>`;
+
+            // PEMBARUAN: Event listener untuk widget interaktif
+            container.querySelectorAll('.dashboard-widget.interactive').forEach(widget => {
+                widget.addEventListener('click', () => {
+                    const targetPage = widget.dataset.navTarget;
+                    if (targetPage) {
+                        appState.activePage = targetPage;
+                        localStorage.setItem('lastActivePage', appState.activePage);
+                        renderUI();
+                    }
+                });
+            });
+
             renderQuickAttendance($('#quick-attendance-section'));
         } catch (error) {
             console.error("Error rendering dashboard:", error);
@@ -531,7 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="form-group span-2"><label>Pemberi Dana</label>
                             <div class="input-with-button">
                                 <select id="fs-creditor" required><option value="">Pilih...</option>${appState.fundingCreditors.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
-                                <button type="button" id="manage-funding-creditors-btn" class="btn btn-secondary btn-sm">Kelola</button>
+                                <button type="button" id="manage-funding-creditors-btn" class="icon-btn" title="Kelola Pemberi Dana"><span class="material-symbols-outlined">settings</span></button>
                             </div>
                         </div>
                         <div class="form-group span-2"><label>Keterangan</label><input type="text" id="fs-desc" required placeholder="Contoh: Termin 1"></div>
@@ -539,11 +593,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <!-- Loan Specific Fields -->
                     <div id="loan-details-section" class="hidden" style="margin-top:1rem;">
-                         <div class="form-grid-invoice">
+                        <div class="form-group" style="border-top: 1px dashed var(--line); padding-top: 1rem;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="fs-with-interest">
+                                <span>Pinjaman Berbunga</span>
+                            </label>
+                        </div>
+                         <div id="interest-fields" class="form-grid-invoice hidden">
                             <div class="form-group"><label>Bunga (%)</label><input type="number" id="fs-interest" placeholder="0"></div>
                             <div class="form-group"><label>Tenor (bulan)</label><input type="number" id="fs-tenor" placeholder="0"></div>
-                            <div class="form-group span-2"><label>Proyek</label><select id="fs-project" required>${projectOptions}</select></div>
                          </div>
+                         <div class="form-group full" style="margin-top: 1rem;"><label>Proyek</label><select id="fs-project" required>${projectOptions}</select></div>
                          <div id="loan-calculation-preview" class="calculation-preview hidden"></div>
                     </div>
                     <div class="form-group full" style="margin-top:1.5rem;"><button type="submit" class="btn btn-primary">Simpan</button></div>
@@ -558,13 +618,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const loanSection = $('#loan-details-section');
         const loanPreview = $('#loan-calculation-preview');
+        // PEMBARUAN: Logika untuk pinjaman berbunga
+        const withInterestCheckbox = $('#fs-with-interest');
+        const interestFields = $('#interest-fields');
+
         $('#fs-type').addEventListener('change', (e) => { 
             const isLoan = e.target.value === 'Pinjaman';
             loanSection.classList.toggle('hidden', !isLoan);
-            if (!isLoan) loanPreview.classList.add('hidden');
+            if (!isLoan) {
+                loanPreview.classList.add('hidden');
+                withInterestCheckbox.checked = false;
+                interestFields.classList.add('hidden');
+            }
+        });
+        
+        withInterestCheckbox.addEventListener('change', (e) => {
+            interestFields.classList.toggle('hidden', !e.target.checked);
+             if (!e.target.checked) loanPreview.classList.add('hidden');
         });
 
         $$('#fs-amount, #fs-interest, #fs-tenor').forEach(el => el.addEventListener('input', () => {
+            if (!withInterestCheckbox.checked) return;
             const principal = getNumericValue($('#fs-amount').value);
             const interest = parseFloat($('#fs-interest').value) || 0;
             const tenor = parseInt($('#fs-tenor').value) || 0;
@@ -614,9 +688,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (type === 'Pinjaman' && !isEdit) {
-            const interestRate = parseFloat($('#fs-interest', form)?.value) || 0;
-            const tenorMonths = parseInt($('#fs-tenor', form)?.value) || 0;
+            const withInterest = form.querySelector('#fs-with-interest')?.checked || false;
+            const interestRate = withInterest ? (parseFloat($('#fs-interest', form)?.value) || 0) : 0;
+            const tenorMonths = withInterest ? (parseInt($('#fs-tenor', form)?.value) || 0) : 0;
             const totalInterest = amount * (interestRate / 100) * tenorMonths;
+            saveData.withInterest = withInterest;
             saveData.projectId = $('#fs-project', form).value;
             saveData.projectName = $('#fs-project', form).options[$('#fs-project', form).selectedIndex].text;
             saveData.interestRate = interestRate;
@@ -675,8 +751,13 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = appState.fundingCreditors.length === 0 ? '<p class="empty-state">Belum ada data.</p>' :
             `<div class="table-container"><table class="table"><thead><tr><th>Nama</th><th class="action-cell">Aksi</th></tr></thead><tbody>
             ${appState.fundingCreditors.map(c => `<tr><td>${c.name}</td><td class="action-cell">
-                    <button class="icon-btn btn-edit" data-id="${c.id}"><span class="material-symbols-outlined">create</span></button>
-                    <button class="icon-btn btn-delete" data-id="${c.id}"><span class="material-symbols-outlined">delete</span></button>
+                <div class="action-menu">
+                    <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                    <div class="action-dropdown hidden">
+                        <button class="action-dropdown-item btn-edit" data-id="${c.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                        <button class="action-dropdown-item action-dropdown-item--danger btn-delete" data-id="${c.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                    </div>
+                </div>
             </td></tr>`).join('')}</tbody></table></div>`;
         container.querySelectorAll('.btn-edit').forEach(b => b.addEventListener('click', e => {
             const creditorData = appState.fundingCreditors.find(c=>c.id===e.currentTarget.dataset.id);
@@ -697,8 +778,13 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = creditors.length === 0 ? '<p class="empty-state">Belum ada data.</p>' :
             `<div class="table-container"><table class="table"><thead><tr><th>Nama</th><th class="action-cell">Aksi</th></tr></thead><tbody>
             ${creditors.map(c => `<tr><td>${c.name}</td><td class="action-cell">
-                    <button class="icon-btn btn-edit" data-id="${c.id}"><span class="material-symbols-outlined">create</span></button>
-                    <button class="icon-btn btn-delete" data-id="${c.id}"><span class="material-symbols-outlined">delete</span></button>
+                <div class="action-menu">
+                    <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                    <div class="action-dropdown hidden">
+                        <button class="action-dropdown-item btn-edit" data-id="${c.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                        <button class="action-dropdown-item action-dropdown-item--danger btn-delete" data-id="${c.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                    </div>
+                </div>
             </td></tr>`).join('')}</tbody></table></div>`;
         container.querySelectorAll('.btn-edit').forEach(b => b.addEventListener('click', e => {
             const creditorData = creditors.find(c => c.id === e.currentTarget.dataset.id);
@@ -727,11 +813,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td><span class="badge">${s.type}</span></td>
                         <td>${s.description}</td>
                         <td>${fmtIDR(s.totalRepayableAmount)}</td>
-                        <td><div class="payment-progress-container" title="${fmtIDR(s.amountPaid || 0)} terbayar"><div class="payment-progress-bar" style="width:${progress}%;"></div><span class="payment-progress-text">${progress.toFixed(0)}%</span></div></td>
+                        <td>
+                            <div class="progress-wrapper">
+                                <div class="progress-label">${progress.toFixed(0)}% (${fmtIDR(s.amountPaid || 0)})</div>
+                                <div class="payment-progress-container"><div class="payment-progress-bar" style="width:${progress}%;"></div></div>
+                            </div>
+                        </td>
                         <td class="action-cell">
-                            ${!s.isFullyPaid ? `<button class="btn btn-primary btn-sm btn-pay-loan" data-id="${s.id}">Bayar</button>` : ''}
-                            <button class="icon-btn btn-edit-source" data-id="${s.id}" title="Edit Transaksi"><span class="material-symbols-outlined">create</span></button>
-                            <button class="icon-btn btn-delete-source" data-id="${s.id}" title="Hapus Transaksi"><span class="material-symbols-outlined">delete</span></button>
+                             <div class="action-menu">
+                                <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                                <div class="action-dropdown hidden">
+                                    ${!s.isFullyPaid ? `<button class="action-dropdown-item btn-pay-loan" data-id="${s.id}"><span class="material-symbols-outlined">payments</span> Bayar</button>` : ''}
+                                    <button class="action-dropdown-item btn-edit-source" data-id="${s.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                                    <button class="action-dropdown-item action-dropdown-item--danger btn-delete-source" data-id="${s.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                                </div>
+                            </div>
                         </td>
                     </tr>`
                 }).join('')}</tbody></table></div>`;
@@ -843,7 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="form-group span-2"><label>Kreditur</label>
                     <div class="input-with-button">
                         <select id="inv-creditor" required><option value="">Pilih...</option>${appState.expenditureCreditors[category].map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
-                        <button type="button" id="manage-exp-creditors-btn" class="btn btn-secondary btn-sm">Kelola</button>
+                        <button type="button" id="manage-exp-creditors-btn" class="icon-btn" title="Kelola Kreditur"><span class="material-symbols-outlined">settings</span></button>
                     </div>
                 </div>
                 <div class="form-group span-2"><label>Alokasi Proyek</label><select id="inv-project" required>${projectOptions}</select></div>
@@ -1061,7 +1157,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const unpaidLoanPromise = getDocs(query(fundingSourcesCol, where("type", "==", "Pinjaman"), where("isFullyPaid", "==", false)));
             const unpaidPayrollPromise = getDocs(query(payrollLiabilitiesCol, where("isPaid", "==", false)));
             
-            const [unpaidPayrollSnap, unpaidLoanSnap, ...unpaidInvoiceSnaps] = await Promise.all([unpaidPayrollPromise, unpaidLoanPromise, ...unpaidInvoicePromises]);
+            // PERBAIKAN: Pisahkan promises dan gabungkan dengan benar
+            const allPromises = [unpaidPayrollPromise, unpaidLoanPromise, ...unpaidInvoicePromises];
+            const [unpaidPayrollSnap, unpaidLoanSnap, ...unpaidInvoiceSnaps] = await Promise.all(allPromises);
 
             let allUnpaidDebts = [];
             
@@ -1099,8 +1197,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><span class="badge ${badgeClass}">${isLoan ? 'Pinjaman' : 'Faktur'}</span></td>
                     <td>${isLoan ? debt.description : debt.creditorName}</td>
                     <td>${fmtIDR(total)}</td>
-                    <td><div class="payment-progress-container" title="${fmtIDR(debt.amountPaid || 0)} terbayar"><div class="payment-progress-bar" style="width:${progress}%;"></div><span class="payment-progress-text">${progress.toFixed(0)}%</span></div></td>
-                    <td class="action-cell"><button class="btn btn-primary btn-sm btn-pay" data-id="${debt.id}" data-type="${debt.debtType}" data-category="${debt.category || ''}">Bayar</button></td>
+                    <td>
+                        <div class="progress-wrapper">
+                            <div class="progress-label">${progress.toFixed(0)}%</div>
+                            <div class="payment-progress-container"><div class="payment-progress-bar" style="width:${progress}%;"></div></div>
+                        </div>
+                    </td>
+                    <td class="action-cell"><button class="icon-btn btn-pay" data-id="${debt.id}" data-type="${debt.debtType}" data-category="${debt.category || ''}" title="Bayar Tagihan"><span class="material-symbols-outlined">payments</span></button></td>
                 </tr>`
             }).join('')}
             </tbody></table></div>`;
@@ -1141,7 +1244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${p.daysWorkedFull} Penuh, ${p.daysWorkedHalf} Setengah</td>
                         <td>${p.overtimeHours} Jam</td>
                         <td>${fmtIDR(p.totalLiability)}</td>
-                        <td class="action-cell"><button class="btn btn-primary btn-sm btn-pay-payroll" data-id="${p.id}">Bayar</button></td>
+                        <td class="action-cell"><button class="icon-btn btn-pay-payroll" data-id="${p.id}" title="Bayar Gaji"><span class="material-symbols-outlined">payments</span></button></td>
                     </tr>
                 `).join('')}
                 </tbody>
@@ -1378,12 +1481,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <h4>Absensi Pekerja</h4>
                 <div style="display: flex; gap: 1rem; align-items: center;">
                     <input type="date" id="attendance-date-picker" value="${appState.attendanceDate}" class="w-full">
-                    <button id="add-worker-btn" class="btn btn-primary"><span class="material-symbols-outlined">person_add</span>Tambah</button>
+                    <button id="manage-workers-btn" class="btn btn-primary"><span class="material-symbols-outlined">group</span>Kelola</button>
                 </div>
             </div>
             <div class="card card-pad" style="margin-top: 1.5rem;">
                 <div class="form-section-header">
-                    <h5 class="form-section-title">Daftar Pekerja</h5>
+                    <h5 class="form-section-title">Daftar Kehadiran</h5>
                     <button id="mark-all-present-btn" class="btn btn-secondary btn-sm"><span class="material-symbols-outlined">checklist</span>Tandai Semua Hadir</button>
                 </div>
                 <div id="workers-list-container"><p>Memuat...</p></div>
@@ -1393,9 +1496,48 @@ document.addEventListener('DOMContentLoaded', () => {
             appState.attendanceDate = e.target.value;
             renderWorkersList();
         });
-        $('#add-worker-btn').addEventListener('click', () => createModal('newWorker', {}));
+        $('#manage-workers-btn').addEventListener('click', () => createModal('manageWorkers'));
         $('#mark-all-present-btn').addEventListener('click', handleMarkAllPresent);
         renderWorkersList();
+    }
+
+    function renderWorkersCollectionTable(container) {
+        if (!container) return;
+        const workers = appState.workers;
+        container.innerHTML = workers.length === 0 ? '<p class="empty-state">Belum ada data pekerja.</p>' :
+            `<div class="table-container">
+                <table class="table">
+                    <thead><tr><th>Nama</th><th>Jabatan</th><th>Proyek</th><th>Upah Harian</th><th class="action-cell">Aksi</th></tr></thead>
+                    <tbody>
+                    ${workers.map(worker => `
+                        <tr>
+                            <td><strong>${worker.workerName}</strong></td>
+                            <td>${worker.position}</td>
+                            <td>${appState.projects.find(p => p.id === worker.projectId)?.projectName || 'N/A'}</td>
+                            <td>${fmtIDR(worker.dailyWage)}</td>
+                            <td class="action-cell">
+                                <div class="action-menu">
+                                    <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                                    <div class="action-dropdown hidden">
+                                        <button class="action-dropdown-item btn-edit-worker" data-id="${worker.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                                        <button class="action-dropdown-item action-dropdown-item--danger btn-delete-worker" data-id="${worker.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+
+        $$('#modal-workers-table-container .btn-edit-worker').forEach(btn => btn.addEventListener('click', e => {
+            const worker = appState.workers.find(w => w.id === e.currentTarget.dataset.id);
+            createModal('editWorker', worker);
+        }));
+        $$('#modal-workers-table-container .btn-delete-worker').forEach(btn => btn.addEventListener('click', e => {
+            const workerId = e.currentTarget.dataset.id;
+            createModal('confirmDelete', { title: 'Hapus Pekerja', onConfirm: () => handleDeleteWorker(workerId) });
+        }));
     }
     
     async function renderWorkersList() {
@@ -1409,7 +1551,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const attendanceData = attendanceSnap.exists() ? attendanceSnap.data().records : {};
     
             if (appState.workers.length === 0) {
-                container.innerHTML = '<p class="empty-state">Belum ada data pekerja. Silakan tambahkan melalui tombol "Tambah".</p>';
+                container.innerHTML = '<p class="empty-state">Belum ada data pekerja. Silakan tambahkan melalui tombol "Kelola Pekerja".</p>';
                 return;
             }
     
@@ -1422,7 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = `
                 <div class="table-container">
                     <table class="table">
-                        <thead><tr><th>Nama</th><th>Jabatan</th><th>Proyek</th><th>Status Hari Ini</th><th class="action-cell">Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>Status Hari Ini</th><th class="action-cell">Aksi</th></tr></thead>
                         <tbody>
                         ${appState.workers.map(worker => {
                             const attendanceRecord = attendanceData[worker.id];
@@ -1433,14 +1575,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             return `
                                 <tr>
-                                    <td><strong>${worker.workerName}</strong></td>
-                                    <td>${worker.position}</td>
-                                    <td>${appState.projects.find(p => p.id === worker.projectId)?.projectName || 'N/A'}</td>
+                                    <td><strong>${worker.workerName}</strong><br><small>${worker.position}</small></td>
                                     <td><span class="badge badge--${statusInfo.badge}">${statusText}</span></td>
                                     <td class="action-cell">
                                         <button class="btn btn-secondary btn-sm btn-change-status" data-id="${worker.id}" data-name="${worker.workerName}">Ubah Status</button>
-                                        <button class="icon-btn btn-edit-worker" data-id="${worker.id}"><span class="material-symbols-outlined">create</span></button>
-                                        <button class="icon-btn btn-delete-worker" data-id="${worker.id}"><span class="material-symbols-outlined">delete</span></button>
                                     </td>
                                 </tr>`;
                         }).join('')}
@@ -1452,14 +1590,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { id, name } = e.currentTarget.dataset;
                 const worker = appState.workers.find(w => w.id === id);
                 createModal('attendanceStatus', { workerId: id, workerName: name, onSelect: (status, overtime) => handleUpdateAttendance(id, worker, status, overtime) });
-            }));
-            $$('.btn-edit-worker').forEach(btn => btn.addEventListener('click', e => {
-                const worker = appState.workers.find(w => w.id === e.currentTarget.dataset.id);
-                createModal('editWorker', worker);
-            }));
-             $$('.btn-delete-worker').forEach(btn => btn.addEventListener('click', e => {
-                 const workerId = e.currentTarget.dataset.id;
-                 createModal('confirmDelete', { title: 'Hapus Pekerja', onConfirm: () => handleDeleteWorker(workerId) });
             }));
         } catch (error) {
             container.innerHTML = '<p class="empty-state">Gagal memuat data.</p>';
@@ -1623,7 +1753,15 @@ document.addEventListener('DOMContentLoaded', () => {
             toast('success', 'Data pekerja berhasil disimpan.');
             closeModal();
             await fetchWorkers();
-            renderWorkersList();
+            
+            // PERBAIKAN: Refresh tabel di modal dan halaman utama
+            if ($('#manageWorkers-modal')) {
+                renderWorkersCollectionTable($('#modal-workers-table-container'));
+            }
+            if (appState.activePage === 'absensi') {
+                renderWorkersList();
+            }
+
         } catch (error) {
             toast('error', 'Gagal menyimpan data.');
         }
@@ -1635,7 +1773,14 @@ document.addEventListener('DOMContentLoaded', () => {
             await deleteDoc(doc(workersCol, workerId));
             toast('success', 'Pekerja berhasil dihapus.');
             await fetchWorkers();
-            renderWorkersList();
+            
+            // PERBAIKAN: Refresh tabel di modal dan halaman utama
+            if ($('#manageWorkers-modal')) {
+                renderWorkersCollectionTable($('#modal-workers-table-container'));
+            }
+            if (appState.activePage === 'absensi') {
+                renderWorkersList();
+            }
         } catch (error) {
             toast('error', 'Gagal menghapus pekerja.');
         }
@@ -1692,8 +1837,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <td>${item.unit}</td>
                                     <td class="text-right"><strong>${item.currentStock || 0}</strong></td>
                                     <td class="action-cell">
-                                        <button class="icon-btn btn-edit-stock" data-id="${item.id}"><span class="material-symbols-outlined">create</span></button>
-                                        <button class="icon-btn btn-delete-stock" data-id="${item.id}"><span class="material-symbols-outlined">delete</span></button>
+                                        <div class="action-menu">
+                                            <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                                            <div class="action-dropdown hidden">
+                                                <button class="action-dropdown-item btn-edit-stock" data-id="${item.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                                                <button class="action-dropdown-item action-dropdown-item--danger btn-delete-stock" data-id="${item.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -1921,7 +2071,7 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = `<div id="pengaturan-content"><p>Memuat...</p></div>`;
         
         let projectHTML = `
-            <div class="section-head"><h4>Manajemen Proyek</h4><button id="add-project-btn" class="btn btn-primary"><span class="material-symbols-outlined">add</span>Tambah Proyek</button></div>
+            <div class="section-head"><h4>Manajemen Proyek</h4><button id="add-project-btn" class="btn btn-primary" title="Tambah Proyek Baru"><span class="material-symbols-outlined">add</span></button></div>
             <div class="card card-pad" id="project-list-container">${renderProjectTable(appState.projects)}</div>`;
 
         const snap = await getDocs(query(membersCol, orderBy('createdAt', 'desc')));
@@ -1962,8 +2112,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><strong>${p.projectName}</strong></td>
                 <td>${p.description || '-'}</td>
                 <td class="action-cell">
-                    <button class="icon-btn btn-edit-project" data-id="${p.id}"><span class="material-symbols-outlined">create</span></button>
-                    <button class="icon-btn btn-delete-project" data-id="${p.id}"><span class="material-symbols-outlined">delete</span></button>
+                    <div class="action-menu">
+                        <button class="icon-btn action-menu-btn" title="Aksi"><span class="material-symbols-outlined">more_vert</span></button>
+                        <div class="action-dropdown hidden">
+                            <button class="action-dropdown-item btn-edit-project" data-id="${p.id}"><span class="material-symbols-outlined">create</span> Edit</button>
+                            <button class="action-dropdown-item action-dropdown-item--danger btn-delete-project" data-id="${p.id}"><span class="material-symbols-outlined">delete</span> Hapus</button>
+                        </div>
+                    </div>
                 </td>
             </tr>`).join('')}
         </tbody></table></div>`;
@@ -2029,6 +2184,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!userProfileBtn.contains(e.target) && !$('#user-dropdown').contains(e.target)) $('#user-dropdown')?.classList.add('hidden');
             if (!notificationBtn.contains(e.target) && !$('#notification-dropdown').contains(e.target)) $('#notification-dropdown')?.classList.add('hidden');
             if (!e.target.closest('.custom-select-wrapper')) $$('.custom-select-wrapper.open').forEach(w => w.classList.remove('open'));
+            
+            // PEMBARUAN: Menutup dropdown aksi saat klik di luar
+            if (!e.target.closest('.action-menu')) {
+                $$('.action-dropdown.show').forEach(d => d.classList.remove('show'));
+            } else {
+                 // Logika untuk membuka dropdown yang diklik dan menutup yang lain
+                const currentMenu = e.target.closest('.action-menu');
+                const dropdown = currentMenu.querySelector('.action-dropdown');
+                const isShowing = dropdown.classList.contains('show');
+                $$('.action-dropdown.show').forEach(d => d.classList.remove('show'));
+                if (!isShowing) dropdown.classList.add('show');
+            }
         });
         themeToggleBtn.addEventListener('click', () => {
             document.body.classList.toggle('dark-theme');
@@ -2093,4 +2260,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     init();
 });
+
 
