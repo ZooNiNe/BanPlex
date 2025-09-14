@@ -42,36 +42,43 @@
           <span class="material-symbols-outlined">dashboard</span>
           <span class="nav-text">Dashboard</span>
         </button>
-        <button class="nav-item" data-nav="pemasukan-pinjaman" data-role="Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus, hanya 'Owner' -->
+        <button class="nav-item" data-nav="pemasukan-pinjaman" data-role="Owner">
             <span class="material-symbols-outlined">account_balance_wallet</span>
             <span class="nav-text">Pemasukan & Pinjaman</span>
         </button>
-        <button class="nav-item" data-nav="alokasi-anggaran" data-role="Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus, hanya 'Owner' -->
+        <button class="nav-item" data-nav="alokasi-anggaran" data-role="Owner">
             <span class="material-symbols-outlined">account_tree</span>
             <span class="nav-text">Alokasi Anggaran</span>
         </button>
-        <button class="nav-item" data-nav="input-data" data-role="Editor,Admin,Owner">
-          <span class="material-symbols-outlined">edit_document</span>
+        <!-- PERUBAHAN: Ikon diubah menjadi 'post_add' agar seragam -->
+        <button class="nav-item" data-nav="input-data" data-role="Editor,Owner">
+          <span class="material-symbols-outlined">post_add</span>
           <span class="nav-text">Input Pengeluaran</span>
         </button>
-        <button class="nav-item" data-nav="absensi" data-role="Editor,Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus -->
+        <button class="nav-item" data-nav="absensi" data-role="Editor,Owner">
           <span class="material-symbols-outlined">person_check</span>
           <span class="nav-text">Absensi</span>
         </button>
-        <button class="nav-item" data-nav="manajemen-stok" data-role="Editor,Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus -->
+        <button class="nav-item" data-nav="manajemen-stok" data-role="Editor,Owner">
           <span class="material-symbols-outlined">inventory_2</span>
           <span class="nav-text">Manajemen Stok</span>
         </button>
-        <button class="nav-item" data-nav="tagihan" data-role="Viewer,Editor,Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus -->
+        <button class="nav-item" data-nav="tagihan" data-role="Viewer,Editor,Owner">
           <span class="material-symbols-outlined">receipt_long</span>
           <span class="nav-text">Tagihan</span>
         </button>
-        <!-- PERUBAHAN: data-nav diubah menjadi "laporan" -->
-        <button class="nav-item" data-nav="laporan" data-role="Viewer,Editor,Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus -->
+        <button class="nav-item" data-nav="laporan" data-role="Viewer,Editor,Owner">
           <span class="material-symbols-outlined">monitoring</span>
           <span class="nav-text">Laporan</span>
         </button>
-        <button class="nav-item" data-nav="pengaturan" data-role="Admin,Owner">
+        <!-- PERUBAHAN: Role 'Admin' dihapus, hanya 'Owner' -->
+        <button class="nav-item" data-nav="pengaturan" data-role="Owner">
           <span class="material-symbols-outlined">settings</span>
           <span class="nav-text">Pengaturan</span>
         </button>
@@ -97,6 +104,9 @@
         </div>
 
         <div class="header-actions">
+          <button id="theme-toggle-btn" class="icon-btn" aria-label="Ganti Tema">
+            <span class="material-symbols-outlined">light_mode</span>
+          </button>
           <button id="global-search-btn" class="icon-btn" aria-label="Cari">
             <span class="material-symbols-outlined">search</span>
           </button>
@@ -147,7 +157,8 @@
   </div>
   
   <!-- Floating Action Button (FAB) -->
-  <button id="fab" class="fab hidden" aria-label="Tambah Transaksi" data-role="Editor,Admin,Owner">
+  <!-- PERUBAHAN: Role 'Admin' dihapus -->
+  <button id="fab" class="fab hidden" aria-label="Tambah Transaksi" data-role="Editor,Owner">
     <span class="material-symbols-outlined">add</span>
   </button>
 
