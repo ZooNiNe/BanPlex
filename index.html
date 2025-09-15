@@ -2,33 +2,29 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Portal Keuangan Proyek</title>
 
-  <!-- PWA & Meta Tags -->
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="icon" href="logo-main.png" type="image/png">
   <meta name="description" content="Portal Keuangan Proyek untuk manajemen transaksi, absensi, dan laporan secara efisien.">
 
-  <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 
-  <!-- Chart.js (untuk Halaman Monitoring) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-
-  <!-- Styles -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <div id="app-shell">
-    <!-- Sidebar Navigasi -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-head">
         <img src="logo-main.png" alt="Logo" class="brand-logo-sidebar">
@@ -50,14 +46,6 @@
             <span class="material-symbols-outlined">account_tree</span>
             <span class="nav-text">Alokasi Anggaran</span>
         </button>
-        <button class="nav-item" data-nav="pembayaran-digital" data-role="Editor,Owner">
-          <span class="material-symbols-outlined">payments</span>
-          <span class="nav-text">Pembayaran Digital</span>
-        </button>
-        <button class="nav-item" data-nav="pembelian" data-role="Editor,Owner">
-          <span class="material-symbols-outlined">shopping_cart</span>
-          <span class="nav-text">Pembelian</span>
-        </button>
         <button class="nav-item" data-nav="input-data" data-role="Editor,Owner">
           <span class="material-symbols-outlined">post_add</span>
           <span class="nav-text">Input Pengeluaran</span>
@@ -78,10 +66,6 @@
           <span class="material-symbols-outlined">monitoring</span>
           <span class="nav-text">Laporan</span>
         </button>
-        <button class="nav-item" data-nav="pengaturan" data-role="Owner">
-          <span class="material-symbols-outlined">settings</span>
-          <span class="nav-text">Pengaturan</span>
-        </button>
       </nav>
       <div class="sidebar-footer">
         <button id="auth-btn" class="nav-item">
@@ -91,7 +75,6 @@
       </div>
     </aside>
 
-    <!-- Konten Utama -->
     <div class="content-wrapper">
       <header class="main-header">
         <div class="header-left">
@@ -104,12 +87,7 @@
         </div>
 
         <div class="header-actions">
-          <button id="theme-toggle-btn" class="icon-btn" aria-label="Ganti Tema">
-            <span class="material-symbols-outlined">light_mode</span>
-          </button>
-          <button id="global-search-btn" class="icon-btn" aria-label="Cari">
-            <span class="material-symbols-outlined">search</span>
-          </button>
+          
           <div class="notification-wrapper">
             <button id="notification-btn" class="icon-btn" aria-label="Notifikasi">
               <span class="material-symbols-outlined">notifications</span>
@@ -140,6 +118,14 @@
                     </div>
                 </div>
                 <div class="user-dropdown-footer">
+                    <button id="toggle-theme-btn" class="btn btn-secondary w-full" data-role="*">
+                      <span class="material-symbols-outlined" id="toggle-theme-icon">dark_mode</span>
+                      <span id="toggle-theme-text">Ganti Tema</span>
+                    </button>
+                    <button id="open-settings-btn" class="btn btn-secondary w-full" data-role="Owner">
+                      <span class="material-symbols-outlined">settings</span>
+                      <span>Pengaturan</span>
+                    </button>
                     <button id="auth-dropdown-btn" class="btn btn-secondary w-full">
                     <span class="material-symbols-outlined">login</span>
                     <span>Login dengan Google</span>
@@ -150,16 +136,13 @@
         </div>
       </header>
 
-      <div class="page-container">
-        <!-- Konten halaman dinamis akan dimuat di sini oleh JavaScript -->
-      </div>
+      <main class="page-container">
+        </main>
     </div>
   </div>
 
-  <!-- Scrim (Overlay untuk sidebar mobile) -->
   <div id="scrim" class="scrim"></div>
 
-  <!-- Popup/Toast Notifikasi -->
   <div id="popup-container" class="popup-container">
     <div class="popup-content">
       <span id="popup-icon" class="material-symbols-outlined"></span>
@@ -167,11 +150,50 @@
     </div>
   </div>
 
-  <!-- Container untuk Modal Dinamis -->
   <div id="modal-container"></div>
   
-  <!-- JavaScript -->
+  <!-- FAB (Floating Action Button) -->
+  <div class="fab-container" aria-hidden="false" data-role="Editor,Owner">
+    <button id="fab-btn" class="fab" aria-label="Aksi Cepat">
+      <span class="material-symbols-outlined">add</span>
+    </button>
+    <div id="fab-menu" class="fab-menu" aria-label="Menu Aksi Cepat">
+      <button class="fab-menu-item" data-action="add-expense">
+        <div class="fab-menu-icon"><span class="material-symbols-outlined">post_add</span></div>
+        <div class="fab-menu-label">Pengeluaran</div>
+      </button>
+      <button class="fab-menu-item" data-action="add-income">
+        <div class="fab-menu-icon"><span class="material-symbols-outlined">account_balance_wallet</span></div>
+        <div class="fab-menu-label">Pemasukan</div>
+      </button>
+      <button class="fab-menu-item" data-action="add-attendance">
+        <div class="fab-menu-icon"><span class="material-symbols-outlined">person_check</span></div>
+        <div class="fab-menu-label">Absensi</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation (Mobile) -->
+  <nav id="bottom-nav" class="bottom-nav" aria-label="Navigasi Utama">
+    <button class="nav-item" data-nav="dashboard" aria-label="Dashboard">
+      <span class="material-symbols-outlined">dashboard</span>
+      <span class="nav-text">Dashboard</span>
+    </button>
+    <button class="nav-item" data-nav="tagihan" aria-label="Tagihan" data-role="Editor,Owner">
+      <span class="material-symbols-outlined">receipt_long</span>
+      <span class="nav-text">Tagihan</span>
+    </button>
+    <div class="fab-placeholder" aria-hidden="true" data-role="Editor,Owner"></div>
+    <button class="nav-item" data-nav="manajemen-stok" aria-label="Stok" data-role="Editor,Owner">
+      <span class="material-symbols-outlined">inventory_2</span>
+      <span class="nav-text">Stok</span>
+    </button>
+    <button class="nav-item" data-nav="laporan" aria-label="Laporan" data-role="Viewer,Editor,Owner">
+      <span class="material-symbols-outlined">monitoring</span>
+      <span class="nav-text">Laporan</span>
+    </button>
+  </nav>
+  
   <script src="script.js" type="module"></script>
 </body>
 </html>
-

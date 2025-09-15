@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =============================
+    // Helpers
+    // =============================
+    function ownerEmail() {
+      // Ganti jika email Owner berbeda
+      return 'dq060412@gmail.com';
+    }
+
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/teams/main/members/$(userId)).data;
+    }
+
+    // Owner ditentukan dari email Google terverifikasi
+    function isOwnerByEmail() {
+      return request.auth != null
+             && request.auth.token.email_verified == true
+             && request.auth.token.email == ownerEmail();
+    }
+
+    // Pengguna telah login, terdaftar pada tim, dan status aktif
+    function isActiveUser() {
+      return request.auth != null
+             && exists(/databases/$(database)/documents/teams/main/members/$(request.auth.uid))
+             && getUserData(request.auth.uid).status == 'active';
+    }
+
+    // Editor atau Owner (Owner selalu true via email)
+    function isEditorOrHigher() {
+      return isOwnerByEmail()
+             || (isActiveUser() && getUserData(request.auth.uid).role in ['Editor', 'Owner']);
+    }
+
+    // Validasi field saat pendaftaran anggota (mencegah eskalasi hak)
+    function hasOnlyAllowedMemberFields() {
+      return request.resource.data.keys().hasOnly(['email','name','photoURL','role','status','createdAt']);
+    }
+
+    // =============================
+    // Rules
+    // =============================
+
+    // Data anggota tim
+    match /teams/main/members/{userId} {
+      // User boleh mendaftarkan diri pertama kali sebagai Viewer + pending saja
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && !exists(resource.path)
+        && hasOnlyAllowedMemberFields()
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'Viewer'
+        && request.resource.data.status == 'pending';
+
+      // Baca profil sendiri, atau Owner (email)
+      allow read: if (request.auth != null && request.auth.uid == userId) || isOwnerByEmail();
+
+      // Hanya Owner (email) yang boleh mengubah/hapus data anggota (aktifkan, ubah role, dll.)
+      allow update, delete: if isOwnerByEmail();
+    }
+
+    // Semua koleksi lain di bawah tim 'main': invoices, envelopes, projects, materials, suppliers, dsb.
+    match /teams/main/{document=**} {
+      allow read: if isActiveUser() || isOwnerByEmail();
+      allow write: if isEditorOrHigher();
+    }
+  }
+}
+

@@ -75,7 +75,7 @@ body.dark-theme {
   inset: 0 auto 0 0;
   transform: translateX(-100%);
   z-index: 1100;
-  display: none; /* Mobile-first: disembunyikan default */
+  display: flex;
   flex-direction: column;
   transition: transform .3s ease, box-shadow .2s, border-color .3s, background-color .3s;
 }
@@ -337,18 +337,12 @@ body.dark-theme .nav-item:hover {
 .data-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .data-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: .25rem; }
 .data-card-title { font-weight: 600; margin: 0; flex: 1; word-break: break-word; }
-.data-card-header-left { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.data-card-subtitle { font-size: .85rem; color: var(--text-dim); font-weight: 400; margin: 0; }
-.data-card-amount { font-weight: 600; white-space: nowrap; }
 .data-card-body { display: flex; flex-direction: column; gap: 0.5rem; }
-.data-card-body { max-height: 999px; transition: max-height .25s ease, opacity .2s ease; }
-.data-card.is-collapsed .data-card-body { max-height: 0; opacity: 0; overflow: hidden; }
 .data-card-row { display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
 .data-card-label { color: var(--text-dim); }
 .data-card-value { font-weight: 500; }
 .data-card-row + .data-card-row { border-top: 1px dashed var(--line); padding-top: .5rem; margin-top: .25rem; }
 .data-card-actions { position: absolute; top: 0.5rem; right: 0.5rem; }
-.data-card.is-collapsed .data-card-actions { display: none; }
 .data-card .progress-wrapper { margin-top: 0.5rem; }
 
 /* Row icon + label grouping */
@@ -438,30 +432,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--i
 .payment-progress-bar { height: 100%; background: var(--grad); transition: width 0.5s ease; border-radius: 999px; }
 .payment-progress-bar.is-high { background: var(--success); }
 .payment-progress-bar.is-mid { background: var(--warn); }
-/* Hide sidebar fully on mobile; rely on Bottom Nav */
-@media (max-width: 900px) {
-  .sidebar, #sidebar { display: none !important; visibility: hidden !important; pointer-events: none !important; transform: translateX(-100%) !important; }
-  #btnOpenNav { display: none !important; }
-}
-
-/* Collapsible cards: hide low-priority rows until expanded */
-.data-card.is-collapsed .data-row--hide-when-collapsed { display: none; }
-
-/* Role buttons styling */
-.role-btn { width: 100%; justify-content: center; }
-.role-btn--owner { background: var(--danger); color: #fff; border-color: transparent; }
-.role-btn--editor { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
-.role-btn--viewer { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
-.role-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-
-/* Role badges */
-.badge--role-owner { color: #fff; background: var(--danger); border-color: transparent; }
-.badge--role-editor { color: var(--text); background: var(--line); border-color: transparent; }
-.badge--role-viewer { color: var(--text-dim); background: var(--line); border-color: transparent; }
-
-/* Bottom nav (Viewer 2-item): bigger icons, compact label */
-.bottom-nav.bottom-nav--two .material-symbols-outlined { font-size: 28px; }
-.bottom-nav.bottom-nav--two .nav-item .nav-text { font-size: 0.78rem; }
 /* Progress label colors follow level */
 .progress-wrapper.progress--high .progress-label { color: var(--success); }
 .progress-wrapper.progress--mid .progress-label { color: var(--warn); }
@@ -510,10 +480,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--i
 
 /* Hide bottom nav on desktop */
 @media (min-width: 901px) { .bottom-nav, .fab-container { display: none; } }
-
-/* Two-item bottom nav (Viewer): center alignment */
-.bottom-nav.bottom-nav--two { justify-content: center; gap: 28px; }
-.bottom-nav.bottom-nav--two .fab-placeholder { display: none !important; }
 
 /* Halaman */
 .page-container {
@@ -1751,7 +1717,6 @@ input[type="file"] {
 
 @media (min-width: 901px) {
   .sidebar {
-    display: flex; /* Tampilkan di desktop */
     transform: translateX(0);
   }
   .content-wrapper {
@@ -1957,3 +1922,4 @@ input[type="file"] {
       .modal-bg.show .modal-content { transform: scale(1); }
   }
 }
+
