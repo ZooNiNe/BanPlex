@@ -901,8 +901,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
             
             let formHTML;
-            await fetchData('suppliers', suppliersCol);
-            await fetchData('projects', projectsCol);
+            await fetchData('suppliers', suppliersCol, 'supplierName');
+            await fetchData('projects', projectsCol, 'projectName');
 
             let categoryOptions = [], categoryMasterType = '', categoryLabel = '';
 
@@ -1182,9 +1182,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchData('projects', projectsCol, 'projectName')
         ]);
     
+        // [FIX 6] Tampilkan badge kategori untuk supplier
+        const getListItemContent = (item, type) => {
+            let content = `<span>${item[config.nameField]}</span>`;
+            if (type === 'suppliers' && item.category) {
+                content += `<span class="category-badge category-${item.category.toLowerCase()}">${item.category}</span>`;
+            }
+            return `<div class="master-data-item-info">${content}</div>`;
+        };
+
         const listHTML = appState[config.stateKey].map(item => `
             <div class="master-data-item" data-id="${item.id}" data-type="${type}">
-                <span>${item[config.nameField]}</span>
+                ${getListItemContent(item, type)}
                 <div class="master-data-item-actions">
                     <button class="btn-icon" data-action="edit-master-item"><span class="material-symbols-outlined">edit</span></button>
                     <button class="btn-icon btn-icon-danger" data-action="delete-master-item"><span class="material-symbols-outlined">delete</span></button>
@@ -1199,6 +1208,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
     
+        // [FIX 6] Tambah pilihan kategori untuk supplier
+        if (type === 'suppliers') {
+            const categoryOptions = [
+                { value: 'Operasional', text: 'Operasional' },
+                { value: 'Material', text: 'Material' },
+                { value: 'Lainnya', text: 'Lainnya' },
+            ];
+            formFieldsHTML += createMasterDataSelect('itemCategory', 'Kategori Supplier', categoryOptions);
+        }
+
         if (type === 'workers') {
             const professionOptions = appState.professions.map(p => ({ value: p.id, text: p.professionName }));
             const projectFieldsHTML = appState.projects.map(p => `
@@ -1207,16 +1226,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <input type="text" inputmode="numeric" name="project_wage_${p.id}" placeholder="mis. 150.000">
                 </div>
             `).join('');
+            
+            // [FIX 3] Ganti select native dengan custom select
+            const statusOptions = [
+                { value: 'active', text: 'Aktif' },
+                { value: 'inactive', text: 'Tidak Aktif' }
+            ];
     
             formFieldsHTML += `
                 ${createMasterDataSelect('professionId', 'Profesi', professionOptions, '', 'professions')}
-                <div class="form-group">
-                    <label for="worker-status">Status</label>
-                    <select name="workerStatus" id="worker-status" class="custom-select-native">
-                        <option value="active">Aktif</option>
-                        <option value="inactive">Tidak Aktif</option>
-                    </select>
-                </div>
+                ${createMasterDataSelect('workerStatus', 'Status', statusOptions, 'active')}
                 <h5 class="invoice-section-title">Upah Harian per Proyek</h5>
                 ${projectFieldsHTML || '<p class="empty-state-small">Belum ada proyek. Tambahkan proyek terlebih dahulu.</p>'}
             `;
@@ -1258,6 +1277,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             createdAt: serverTimestamp()
         };
     
+        // [FIX 6] Simpan kategori supplier
+        if (type === 'suppliers') {
+            dataToAdd.category = form.elements.itemCategory.value;
+        }
+
         if (type === 'workers') {
             dataToAdd.professionId = form.elements.professionId.value;
             dataToAdd.status = form.elements.workerStatus.value;
@@ -1296,6 +1320,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
     
+        // [FIX 6] Edit kategori supplier
+        if (type === 'suppliers') {
+            const categoryOptions = [
+                { value: 'Operasional', text: 'Operasional' },
+                { value: 'Material', text: 'Material' },
+                { value: 'Lainnya', text: 'Lainnya' },
+            ];
+            formFieldsHTML += createMasterDataSelect('itemCategory', 'Kategori Supplier', categoryOptions, item.category || 'Operasional');
+        }
+
         if (type === 'workers') {
             const professionOptions = appState.professions.map(p => ({ value: p.id, text: p.professionName }));
             const projectFieldsHTML = appState.projects.map(p => {
@@ -1308,15 +1342,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `
             }).join('');
     
+            // [FIX 3] Ganti select native dengan custom select di modal edit
+            const statusOptions = [
+                { value: 'active', text: 'Aktif' },
+                { value: 'inactive', text: 'Tidak Aktif' }
+            ];
+
             formFieldsHTML += `
                 ${createMasterDataSelect('professionId', 'Profesi', professionOptions, item.professionId || '', 'professions')}
-                 <div class="form-group">
-                    <label for="worker-status">Status</label>
-                    <select name="workerStatus" id="worker-status" class="custom-select-native">
-                        <option value="active" ${item.status === 'active' ? 'selected' : ''}>Aktif</option>
-                        <option value="inactive" ${item.status === 'inactive' ? 'selected' : ''}>Tidak Aktif</option>
-                    </select>
-                </div>
+                ${createMasterDataSelect('workerStatus', 'Status', statusOptions, item.status || 'active')}
                 <h5 class="invoice-section-title">Upah Harian per Proyek</h5>
                 ${projectFieldsHTML || '<p class="empty-state-small">Belum ada proyek.</p>'}
             `;
@@ -1338,6 +1372,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!config || !newName) return;
     
         const dataToUpdate = { [config.nameField]: newName };
+
+        if (type === 'suppliers') {
+            dataToUpdate.category = form.elements.itemCategory.value;
+        }
+
         if (type === 'workers') {
             dataToUpdate.professionId = form.elements.professionId.value;
             dataToUpdate.status = form.elements.workerStatus.value;
@@ -2251,8 +2290,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dailyWage = worker.projectWages?.[projectId] || 0;
             let statusHTML = '';
 
+            // [FIX 1] Pastikan nominal upah harian selalu tampil
+            const wageHTML = `<span class="worker-wage">${fmtIDR(dailyWage)} / hari</span>`;
+
             if (attendance) {
                 const checkInTime = attendance.checkIn.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                // [FIX 1] Tampilkan nominal yang didapat setelah checkout
+                const earnedPayHTML = attendance.totalPay ? `<strong> (${fmtIDR(attendance.totalPay)})</strong>` : '';
+
                 if (attendance.status === 'checked_in') {
                     statusHTML = `
                         <div class="attendance-status checked-in">Masuk: ${checkInTime}</div>
@@ -2262,7 +2307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const checkOutTime = attendance.checkOut.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
                     statusHTML = `
                         <div class="attendance-status">Masuk: ${checkInTime} | Keluar: ${checkOutTime}</div>
-                        <div class="attendance-status completed">Total: ${attendance.workHours.toFixed(1)} jam (${fmtIDR(attendance.totalPay)})</div>
+                        <div class="attendance-status completed">Total: ${attendance.workHours.toFixed(1)} jam ${earnedPayHTML}</div>
                         <button class="btn-icon" data-action="edit-attendance" data-id="${attendance.id}" title="Edit Waktu"><span class="material-symbols-outlined">edit_calendar</span></button>
                     `;
                 }
@@ -2275,7 +2320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="attendance-worker-info">
                         <strong>${worker.workerName}</strong>
                         <span>${profession}</span>
-                        <span class="worker-wage">${fmtIDR(dailyWage)} / hari</span>
+                        ${wageHTML}
                     </div>
                     <div class="attendance-actions">
                         ${statusHTML}
@@ -2665,6 +2710,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dailyWage = worker.projectWages?.[projectId] || 0;
             const existing = existingRecords.get(worker.id);
             
+            // [FIX 1 & 4] Tampilkan nominal upah harian di kartu manual
             return `
                 <div class="manual-attendance-item card">
                     <div class="worker-info">
@@ -2919,4 +2965,3 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     init();
 });
-
