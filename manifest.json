@@ -1,46 +1,23 @@
 {
-  "name": "BanPlex",
-  "short_name": "BanPlex",
-  "description": "Portal Keuangan Proyek untuk manajemen transaksi, absensi, dan laporan secara efisien.",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#f0f9ff",
-  "theme_color": "#ffffff",
-  "scope": "/",
-  "orientation": "portrait-primary",
-  "icons": [
-    {
-      "src": "logo-main.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "logo-main.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Input Transaksi Baru",
-      "short_name": "Input Baru",
-      "description": "Membuka halaman untuk input data transaksi baru.",
-      "url": "/index.html?page=input-data"
-    },
-    {
-      "name": "Lihat Laporan",
-      "short_name": "Laporan",
-      "description": "Membuka halaman monitoring dan laporan.",
-      "url": "/index.html?page=monitoring"
-    },
-    {
-      "name": "Lihat Tagihan",
-      "short_name": "Tagihan",
-      "description": "Melihat daftar tagihan yang belum dibayar.",
-      "url": "/index.html?page=tagihan"
-    }
-  ]
+    "name": "BanPlex",
+    "short_name": "BanPlex",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#1a1d21",
+    "theme_color": "#23272d",
+    "description": "Aplikasi Manajemen Proyek Konstruksi",
+    "icons": [
+        {
+            "src": "icons-logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons-logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
 }
-
