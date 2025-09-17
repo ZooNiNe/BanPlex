@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const auth = getAuth(app);
     const db = getFirestore(app);
     const storage = getStorage(app);
+    const isViewer = () => appState.userRole === 'Viewer';
 
     // =======================================================
     //                DATABASE OFFLINE (INDEXEDDB)
@@ -294,7 +295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'pengeluaran': renderPengeluaranPage,
             'tagihan': renderTagihanPage,
             'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
-            'laporan': () => renderGenericTabPage('laporan', 'Laporan', [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}, {id:'lainnya', label:'Lainnya'}]),
+            'laporan': renderLaporanPage,
             'absensi': renderAbsensiPage,
         };
         
@@ -335,7 +336,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
 
         let navIdsToShow = [];
-        // [UPDATE] Standardize bottom nav to 5 items for all roles.
         if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
         else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
         else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
@@ -441,8 +441,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 formHTML = _getFormPemasukanHTML('pinjaman');
             }
             
-            contentContainer.innerHTML = formHTML + listHTML;
-            _attachPemasukanFormListeners();
+            contentContainer.innerHTML = (isViewer() ? '' : formHTML) + listHTML;
+            if (!isViewer()) _attachPemasukanFormListeners();
             await _rerenderPemasukanList(tabId);
         }
 
@@ -473,7 +473,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const createMasterDataSelect = (id, label, options, selectedValue = '', masterType = null) => {
         const selectedOption = options.find(opt => opt.value === selectedValue);
         const selectedText = selectedOption ? selectedOption.text : 'Pilih...';
-        const showMasterButton = masterType && masterType !== 'projects';
+        const showMasterButton = masterType && masterType !== 'projects' && !isViewer();
 
         return `
             <div class="form-group">
@@ -481,7 +481,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="master-data-select">
                     <div class="custom-select-wrapper">
                         <input type="hidden" id="${id}" name="${id}" value="${selectedValue}">
-                        <button type="button" class="custom-select-trigger">
+                        <button type="button" class="custom-select-trigger" ${isViewer() ? 'disabled' : ''}>
                             <span>${selectedText}</span>
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                         </button>
@@ -572,9 +572,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             ${secondaryInfoHTML}
                         </div>
                     </div>
-                    <button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
+                    ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
                         <span class="material-symbols-outlined">more_vert</span>
-                    </button>
+                    </button>`}
                 </div>`;
             }).join('')}
         </div>`;
@@ -667,6 +667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function _initCustomSelects(context = document) {
         context.querySelectorAll('.custom-select-wrapper').forEach(wrapper => {
             const trigger = wrapper.querySelector('.custom-select-trigger');
+            if (trigger.disabled) return;
             const optionsContainer = wrapper.querySelector('.custom-select-options');
             const hiddenInput = wrapper.querySelector('input[type="hidden"]');
             const triggerSpan = trigger.querySelector('span:first-child');
@@ -843,9 +844,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             ${secondaryInfoHTML}
                         </div>
                     </div>
-                    <button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
+                    ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
                         <span class="material-symbols-outlined">more_vert</span>
-                    </button>
+                    </button>`}
                 </div>
             `}).join('')}
         </div>
@@ -904,28 +905,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             await fetchData('suppliers', suppliersCol, 'supplierName');
             await fetchData('projects', projectsCol, 'projectName');
 
-            let categoryOptions = [], categoryMasterType = '', categoryLabel = '';
+            let categoryOptions = [], categoryMasterType = '', categoryLabel = '', supplierOptions = [];
+            const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
 
             if (tabId === 'material') {
                 formHTML = _getFormFakturMaterialHTML();
             } else {
+                let categoryType;
                 if (tabId === 'operasional') {
                     await fetchData('operationalCategories', opCatsCol);
                     categoryOptions = appState.operationalCategories.map(c => ({ value: c.id, text: c.categoryName }));
                     categoryMasterType = 'op-cats';
                     categoryLabel = 'Kategori Operasional';
+                    categoryType = 'Operasional';
                 }
                 else if (tabId === 'lainnya') {
                     await fetchData('otherCategories', otherCatsCol);
                     categoryOptions = appState.otherCategories.map(c => ({ value: c.id, text: c.categoryName }));
                     categoryMasterType = 'other-cats';
                     categoryLabel = 'Kategori Lainnya';
+                    categoryType = 'Lainnya';
                 }
-                formHTML = _getFormPengeluaranHTML(tabId, categoryOptions, categoryMasterType, categoryLabel);
+                
+                const filteredSuppliers = appState.suppliers.filter(s => s.category === categoryType);
+                supplierOptions = filteredSuppliers.map(s => ({ value: s.id, text: s.supplierName }));
+                formHTML = _getFormPengeluaranHTML(tabId, categoryOptions, categoryMasterType, categoryLabel, supplierOptions, projectOptions);
             }
     
-            contentContainer.innerHTML = formHTML + `<div id="pengeluaran-list-container"></div>`;
-            _attachPengeluaranFormListeners(tabId);
+            contentContainer.innerHTML = (isViewer() ? '' : formHTML) + `<div id="pengeluaran-list-container"></div>`;
+            if(!isViewer()) _attachPengeluaranFormListeners(tabId);
             _rerenderPengeluaranList(tabId);
         }
     
@@ -941,10 +949,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderTabContent(lastSubPage);
     }
     
-    function _getFormPengeluaranHTML(type, categoryOptions, categoryMasterType, categoryLabel) {
-        const supplierOptions = appState.suppliers.map(s => ({ value: s.id, text: s.supplierName }));
-        const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
-
+    function _getFormPengeluaranHTML(type, categoryOptions, categoryMasterType, categoryLabel, supplierOptions, projectOptions) {
         return `
         <div class="card card-pad">
             <form id="pengeluaran-form" data-type="${type}">
@@ -1065,7 +1070,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deliveryOrderUrl: ''
             });
     
-            // Offline Handling
             if (!appState.isOnline) {
                 const tempId = `offline_${Date.now()}`;
                 const offlineRecord = {
@@ -1132,36 +1136,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             return supplier ? supplier.supplierName : 'Tidak Diketahui';
         };
     
-        // [UPDATE] Add direct action buttons to material cards.
         listContainer.innerHTML = `
-            <div style="margin-top: 1.5rem;" class="data-card-grid">
+            <div style="margin-top: 1.5rem;">
                 ${expenses.map(item => `
-                    <div class="card data-card" data-id="${item.id}" data-type="expense">
-                        <div class="data-card-header">
-                            <span class="data-card-title">${getTitle(item)}</span>
-                            <strong class="data-card-amount">${fmtIDR(item.amount)}</strong>
-                        </div>
-                        <div class="data-card-body">
-                            <p class="data-card-description">${item.description}</p>
-                            <span class="data-card-subtitle">${item.date.toDate().toLocaleDateString('id-ID')}</span>
-                        </div>
-                        <div class="data-card-footer">
-                             ${item.status === 'paid' 
-                                ? `<div class="badge success">Lunas</div>` 
-                                : `<div class="badge warn">Tagihan</div>`
-                            }
-                            ${item.type === 'material' ? `
-                            <div class="data-card-actions">
-                                 <button class="btn-icon" data-action="upload-attachment" data-id="${item.id}" title="Upload Lampiran"><span class="material-symbols-outlined">upload_file</span></button>
-                                 <button class="btn-icon" data-action="edit-item" data-id="${item.id}" data-type="expense" title="Edit"><span class="material-symbols-outlined">edit</span></button>
-                                 <button class="btn-icon btn-icon-danger" data-action="delete-item" data-id="${item.id}" data-type="expense" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
+                    <div class="card card-list-item" data-id="${item.id}" data-type="expense">
+                        <div class="card-list-item-content" data-action="open-bill-detail">
+                            <div class="card-list-item-details">
+                                <h5 class="card-list-item-title">${item.description}</h5>
+                                <p class="card-list-item-subtitle">${getTitle(item)} - ${item.date.toDate().toLocaleDateString('id-ID')}</p>
                             </div>
-                            ` : `
-                            <button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
-                                <span class="material-symbols-outlined">more_vert</span>
-                            </button>
-                            `}
+                            <div class="card-list-item-amount-wrapper">
+                                <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
+                                ${item.status === 'paid' 
+                                    ? `<div class="paid-indicator"><span class="material-symbols-outlined">task_alt</span> Lunas</div>` 
+                                    : `<p class="card-list-item-repayment-info" style="color:var(--warn)">Tagihan</p>`
+                                }
+                            </div>
                         </div>
+                        ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
+                            <span class="material-symbols-outlined">more_vert</span>
+                        </button>`}
                     </div>
                 `).join('')}
             </div>
@@ -1182,11 +1176,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchData('projects', projectsCol, 'projectName')
         ]);
     
-        // [FIX 6] Tampilkan badge kategori untuk supplier
         const getListItemContent = (item, type) => {
             let content = `<span>${item[config.nameField]}</span>`;
             if (type === 'suppliers' && item.category) {
                 content += `<span class="category-badge category-${item.category.toLowerCase()}">${item.category}</span>`;
+            }
+            if (type === 'projects') {
+                if (item.projectType === 'main_income') content += `<span class="category-badge" style="background-color:var(--info); color:white;">Utama</span>`;
+                else if (item.projectType === 'internal_expense') content += `<span class="category-badge">Internal</span>`;
             }
             return `<div class="master-data-item-info">${content}</div>`;
         };
@@ -1208,7 +1205,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
     
-        // [FIX 6] Tambah pilihan kategori untuk supplier
         if (type === 'suppliers') {
             const categoryOptions = [
                 { value: 'Operasional', text: 'Operasional' },
@@ -1216,6 +1212,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { value: 'Lainnya', text: 'Lainnya' },
             ];
             formFieldsHTML += createMasterDataSelect('itemCategory', 'Kategori Supplier', categoryOptions);
+        }
+
+        if (type === 'projects') {
+            const projectTypeOptions = [
+                { value: 'main_income', text: 'Pemasukan Utama' },
+                { value: 'internal_expense', text: 'Biaya Internal (Laba Bersih)' }
+            ];
+            formFieldsHTML += createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, 'main_income');
         }
 
         if (type === 'workers') {
@@ -1227,7 +1231,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `).join('');
             
-            // [FIX 3] Ganti select native dengan custom select
             const statusOptions = [
                 { value: 'active', text: 'Aktif' },
                 { value: 'inactive', text: 'Tidak Aktif' }
@@ -1277,26 +1280,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             createdAt: serverTimestamp()
         };
     
-        // [FIX 6] Simpan kategori supplier
-        if (type === 'suppliers') {
-            dataToAdd.category = form.elements.itemCategory.value;
-        }
-
+        if (type === 'suppliers') dataToAdd.category = form.elements.itemCategory.value;
+        if (type === 'projects') dataToAdd.projectType = form.elements.projectType.value;
         if (type === 'workers') {
             dataToAdd.professionId = form.elements.professionId.value;
             dataToAdd.status = form.elements.workerStatus.value;
             dataToAdd.projectWages = {};
             appState.projects.forEach(p => {
                 const wage = parseFormattedNumber(form.elements[`project_wage_${p.id}`].value);
-                if (wage > 0) {
-                    dataToAdd.projectWages[p.id] = wage;
-                }
+                if (wage > 0) dataToAdd.projectWages[p.id] = wage;
             });
         }
         
         toast('loading', `Menambah ${config.title}...`);
         try {
-            await addDoc(config.collection, dataToAdd);
+            if (type === 'projects' && dataToAdd.projectType === 'main_income') {
+                await runTransaction(db, async (transaction) => {
+                    const q = query(projectsCol, where("projectType", "==", "main_income"));
+                    const mainProjectsSnap = await transaction.get(q);
+                    mainProjectsSnap.forEach(doc => transaction.update(doc.ref, { projectType: 'internal_expense' }));
+                    const newProjectRef = doc(config.collection);
+                    transaction.set(newProjectRef, dataToAdd);
+                });
+            } else {
+                await addDoc(config.collection, dataToAdd);
+            }
+
             toast('success', `${config.title} baru berhasil ditambahkan.`);
             form.reset();
             $$('.custom-select-trigger span:first-child', form).forEach(s => s.textContent = 'Pilih...');
@@ -1320,7 +1329,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
     
-        // [FIX 6] Edit kategori supplier
         if (type === 'suppliers') {
             const categoryOptions = [
                 { value: 'Operasional', text: 'Operasional' },
@@ -1328,6 +1336,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { value: 'Lainnya', text: 'Lainnya' },
             ];
             formFieldsHTML += createMasterDataSelect('itemCategory', 'Kategori Supplier', categoryOptions, item.category || 'Operasional');
+        }
+
+        if (type === 'projects') {
+            const projectTypeOptions = [
+                { value: 'main_income', text: 'Pemasukan Utama' },
+                { value: 'internal_expense', text: 'Biaya Internal (Laba Bersih)' }
+            ];
+            formFieldsHTML += createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, item.projectType || 'main_income');
         }
 
         if (type === 'workers') {
@@ -1342,7 +1358,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `
             }).join('');
     
-            // [FIX 3] Ganti select native dengan custom select di modal edit
             const statusOptions = [
                 { value: 'active', text: 'Aktif' },
                 { value: 'inactive', text: 'Tidak Aktif' }
@@ -1373,25 +1388,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     
         const dataToUpdate = { [config.nameField]: newName };
 
-        if (type === 'suppliers') {
-            dataToUpdate.category = form.elements.itemCategory.value;
-        }
-
+        if (type === 'suppliers') dataToUpdate.category = form.elements.itemCategory.value;
+        if (type === 'projects') dataToUpdate.projectType = form.elements.projectType.value;
         if (type === 'workers') {
             dataToUpdate.professionId = form.elements.professionId.value;
             dataToUpdate.status = form.elements.workerStatus.value;
             dataToUpdate.projectWages = {};
             appState.projects.forEach(p => {
                 const wage = parseFormattedNumber(form.elements[`project_wage_${p.id}`].value);
-                if (wage > 0) {
-                    dataToUpdate.projectWages[p.id] = wage;
-                }
+                if (wage > 0) dataToUpdate.projectWages[p.id] = wage;
             });
         }
     
         toast('loading', `Memperbarui ${config.title}...`);
         try {
-            await updateDoc(doc(config.collection, id), dataToUpdate);
+            if (type === 'projects' && dataToUpdate.projectType === 'main_income') {
+                await runTransaction(db, async (transaction) => {
+                    const q = query(projectsCol, where("projectType", "==", "main_income"));
+                    const mainProjectsSnap = await transaction.get(q);
+                    mainProjectsSnap.forEach(docSnap => {
+                        if (docSnap.id !== id) transaction.update(docSnap.ref, { projectType: 'internal_expense' });
+                    });
+                    transaction.update(doc(config.collection, id), dataToUpdate);
+                });
+            } else {
+                await updateDoc(doc(config.collection, id), dataToUpdate);
+            }
             toast('success', `${config.title} berhasil diperbarui.`);
             await handleManageMasterData(type);
         } catch (error) {
@@ -1726,7 +1748,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function _getFormFakturMaterialHTML() {
-        const supplierOptions = appState.suppliers.map(s => ({ value: s.id, text: s.supplierName }));
+        const supplierOptions = appState.suppliers
+            .filter(s => s.category === 'Material')
+            .map(s => ({ value: s.id, text: s.supplierName }));
         const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
 
         return `
@@ -1878,10 +1902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             let { id, type } = { ...card?.dataset, ...actionTarget.dataset };
             let expenseId = actionTarget.dataset.expenseId || card?.dataset.expenseId;
 
-            if (actionTarget.matches('[data-action$="-master-item"]')) {
-                const manager = actionTarget.closest('.master-data-manager');
-                if(manager) type = manager.dataset.type;
-            }
+            if (actionTarget.matches('[data-action$="-master-item"]') && isViewer()) return;
 
             switch (actionTarget.dataset.action) {
                 case 'navigate': handleNavigation(actionTarget.dataset.nav); break;
@@ -1905,6 +1926,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     break;
                 }
                 case 'open-actions': {
+                    if (isViewer()) return;
                     e.preventDefault();
                     let actions = [];
                     if (type === 'bill') {
@@ -1945,16 +1967,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                     break;
                 }
                 case 'delete-item': 
+                    if (isViewer()) return;
                     handleDeleteItem(expenseId || id, type); 
                     break;
                 case 'edit-item': 
+                    if (isViewer()) return;
                     handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); 
                     break;
-                case 'pay-item': if (id && type) handlePaymentModal(id, type); break;
-                case 'pay-bill': if (id) handlePayBillModal(id); break;
-                case 'manage-master': handleManageMasterData(actionTarget.dataset.type); break;
+                case 'pay-item': 
+                    if (isViewer()) return;
+                    if (id && type) handlePaymentModal(id, type); 
+                    break;
+                case 'pay-bill': 
+                    if (isViewer()) return;
+                    if (id) handlePayBillModal(id); 
+                    break;
+                case 'manage-master': 
+                    if (isViewer()) return;
+                    handleManageMasterData(actionTarget.dataset.type); 
+                    break;
                 case 'manage-master-global':
-                    createModal('dataDetail', {
+                     if (isViewer()) return;
+                     createModal('dataDetail', {
                         title: 'Pilih Master Data',
                         content: `
                             <div class="dashboard-nav-grid">
@@ -1968,28 +2002,53 @@ document.addEventListener('DOMContentLoaded', async () => {
                         `
                     });
                     break;
-                case 'edit-master-item': handleEditMasterItem(id, type); break;
-                case 'delete-master-item': handleDeleteMasterItem(id, type); break;
-                case 'check-in': handleCheckIn(actionTarget.dataset.id); break;
-                case 'check-out': handleCheckOut(actionTarget.dataset.id); break;
-                case 'edit-attendance': handleEditAttendanceModal(actionTarget.dataset.id); break;
-                case 'generate-salary-bill': handleGenerateSalaryBill(actionTarget.dataset); break;
-                case 'manage-users': handleManageUsers(); break;
-                case 'user-action': handleUserAction(actionTarget.dataset); break;
-                case 'upload-attachment': handleUploadAttachment(id); break;
+                case 'edit-master-item': 
+                     if (isViewer()) return;
+                     if (actionTarget.closest('.master-data-manager')) {
+                        type = actionTarget.closest('.master-data-manager').dataset.type;
+                     }
+                     handleEditMasterItem(id, type); 
+                     break;
+                case 'delete-master-item': 
+                    if (isViewer()) return;
+                    if (actionTarget.closest('.master-data-manager')) {
+                        type = actionTarget.closest('.master-data-manager').dataset.type;
+                    }
+                    handleDeleteMasterItem(id, type); 
+                    break;
+                case 'check-in': 
+                    if (isViewer()) return;
+                    handleCheckIn(actionTarget.dataset.id); 
+                    break;
+                case 'check-out': 
+                    if (isViewer()) return;
+                    handleCheckOut(actionTarget.dataset.id); 
+                    break;
+                case 'edit-attendance': 
+                    if (isViewer()) return;
+                    handleEditAttendanceModal(actionTarget.dataset.id); 
+                    break;
+                case 'generate-salary-bill': 
+                    if (isViewer()) return;
+                    handleGenerateSalaryBill(actionTarget.dataset); 
+                    break;
+                case 'manage-users': 
+                    if (isViewer()) return;
+                    handleManageUsers(); 
+                    break;
+                case 'user-action': 
+                    if (isViewer()) return;
+                    handleUserAction(actionTarget.dataset); 
+                    break;
+                case 'upload-attachment': 
+                    if (isViewer()) return;
+                    handleUploadAttachment(id); 
+                    break;
             }
         });
 
-        // Offline/Online event listeners
-        window.addEventListener('online', () => {
-            appState.isOnline = true;
-            toast('success', 'Kembali online. Menyinkronkan data...');
-            syncOfflineData();
-        });
-        window.addEventListener('offline', () => {
-            appState.isOnline = false;
-            toast('warn', 'Anda sekarang offline. Perubahan akan disimpan secara lokal.');
-        });
+        window.addEventListener('online', () => { appState.isOnline = true; toast('success', 'Kembali online. Menyinkronkan data...'); syncOfflineData(); });
+        window.addEventListener('offline', () => { appState.isOnline = false; toast('warn', 'Anda sekarang offline. Perubahan akan disimpan secara lokal.'); });
     }
 
     function handleNavigation(pageId) {
@@ -2173,16 +2232,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             {id:'rekap', label:'Rekap Gaji'}
         ];
         container.innerHTML = `
-            <div class="attendance-header">
-                 <button class="btn btn-secondary" data-action="manage-master" data-type="workers">
+            ${isViewer() ? '' : `<div class="attendance-header">
+                 <button class="btn" data-action="manage-master" data-type="workers">
                     <span class="material-symbols-outlined">engineering</span>
-                    Kelola Pekerja
+                    Pekerja
                 </button>
-                 <button class="btn btn-secondary" data-action="manage-master" data-type="professions">
+                 <button class="btn" data-action="manage-master" data-type="professions">
                     <span class="material-symbols-outlined">badge</span>
-                    Kelola Profesi
+                    Profesi
                 </button>
-            </div>
+            </div>`}
             <div class="sub-nav">
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
             </div>
@@ -2209,26 +2268,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             } else if (tabId === 'rekap') {
                 contentContainer.innerHTML = _getSalaryRecapHTML();
-                $('#generate-recap-btn')?.addEventListener('click', () => {
-                    const startDate = $('#recap-start-date').value;
-                    const endDate = $('#recap-end-date').value;
-                    if (startDate && endDate) {
-                        generateSalaryRecap(new Date(startDate), new Date(endDate));
-                    } else {
-                        toast('error', 'Silakan pilih rentang tanggal.');
-                    }
-                });
+                if(!isViewer()) {
+                    $('#generate-recap-btn')?.addEventListener('click', () => {
+                        const startDate = $('#recap-start-date').value;
+                        const endDate = $('#recap-end-date').value;
+                        if (startDate && endDate) {
+                            generateSalaryRecap(new Date(startDate), new Date(endDate));
+                        } else {
+                            toast('error', 'Silakan pilih rentang tanggal.');
+                        }
+                    });
+                } else {
+                     generateSalaryRecap(new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date());
+                }
             } else if (tabId === 'manual') {
                 contentContainer.innerHTML = _getManualAttendanceHTML();
-                _initCustomSelects(contentContainer); // Initialize custom selects here
+                _initCustomSelects(contentContainer); 
                 const dateInput = $('#manual-attendance-date');
-                const projectInput = $('#manual-attendance-project'); // This is a hidden input now
+                const projectInput = $('#manual-attendance-project');
                 
                 dateInput.addEventListener('change', () => _renderManualAttendanceList(dateInput.value, projectInput.value));
-                 projectInput.addEventListener('change', () => _renderManualAttendanceList(dateInput.value, projectInput.value));
-
-
-                $('#manual-attendance-form').addEventListener('submit', handleSaveManualAttendance);
+                projectInput.addEventListener('change', () => _renderManualAttendanceList(dateInput.value, projectInput.value));
+                if(!isViewer()) $('#manual-attendance-form').addEventListener('submit', handleSaveManualAttendance);
+                
                 _renderManualAttendanceList(dateInput.value, projectInput.value);
             }
         };
@@ -2289,30 +2351,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             const profession = appState.professions.find(p => p.id === worker.professionId)?.professionName || 'Tanpa Profesi';
             const dailyWage = worker.projectWages?.[projectId] || 0;
             let statusHTML = '';
-
-            // [FIX 1] Pastikan nominal upah harian selalu tampil
             const wageHTML = `<span class="worker-wage">${fmtIDR(dailyWage)} / hari</span>`;
 
             if (attendance) {
                 const checkInTime = attendance.checkIn.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-                // [FIX 1] Tampilkan nominal yang didapat setelah checkout
                 const earnedPayHTML = attendance.totalPay ? `<strong> (${fmtIDR(attendance.totalPay)})</strong>` : '';
 
                 if (attendance.status === 'checked_in') {
                     statusHTML = `
                         <div class="attendance-status checked-in">Masuk: ${checkInTime}</div>
-                        <button class="btn btn-danger" data-action="check-out" data-id="${attendance.id}">Check Out</button>
+                        ${isViewer() ? '' : `<button class="btn btn-danger" data-action="check-out" data-id="${attendance.id}">Check Out</button>`}
                     `;
                 } else { // completed
                     const checkOutTime = attendance.checkOut.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
                     statusHTML = `
                         <div class="attendance-status">Masuk: ${checkInTime} | Keluar: ${checkOutTime}</div>
                         <div class="attendance-status completed">Total: ${attendance.workHours.toFixed(1)} jam ${earnedPayHTML}</div>
-                        <button class="btn-icon" data-action="edit-attendance" data-id="${attendance.id}" title="Edit Waktu"><span class="material-symbols-outlined">edit_calendar</span></button>
+                        ${isViewer() ? '' : `<button class="btn-icon" data-action="edit-attendance" data-id="${attendance.id}" title="Edit Waktu"><span class="material-symbols-outlined">edit_calendar</span></button>`}
                     `;
                 }
             } else {
-                statusHTML = `<button class="btn btn-success" data-action="check-in" data-id="${worker.id}">Check In</button>`;
+                statusHTML = isViewer() ? '<div class="attendance-status">Belum Hadir</div>' : `<button class="btn btn-success" data-action="check-in" data-id="${worker.id}">Check In</button>`;
             }
             
             return `
@@ -2509,13 +2568,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="recap-filters">
                     <div class="form-group">
                         <label>Tanggal Mulai</label>
-                        <input type="date" id="recap-start-date" value="${firstDayOfMonth}">
+                        <input type="date" id="recap-start-date" value="${firstDayOfMonth}" ${isViewer() ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label>Tanggal Selesai</label>
-                        <input type="date" id="recap-end-date" value="${todayStr}">
+                        <input type="date" id="recap-end-date" value="${todayStr}" ${isViewer() ? 'disabled' : ''}>
                     </div>
-                    <button id="generate-recap-btn" class="btn btn-primary">Tampilkan Rekap</button>
+                    ${isViewer() ? '' : '<button id="generate-recap-btn" class="btn btn-primary">Tampilkan Rekap</button>'}
                 </div>
             </div>
             <div id="recap-results-container" style="margin-top: 1.5rem;">
@@ -2570,7 +2629,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tr>
                                 <th>Nama Pekerja</th>
                                 <th>Total Upah</th>
-                                <th>Aksi</th>
+                                ${isViewer() ? '' : '<th>Aksi</th>'}
                             </tr>
                         </thead>
                         <tbody>
@@ -2578,8 +2637,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <tr>
                                     <td>${worker.workerName}</td>
                                     <td><strong>${fmtIDR(worker.totalPay)}</strong></td>
-                                    <td>
-                                        <button class="btn btn-secondary btn-sm" 
+                                    ${isViewer() ? '' : `<td>
+                                        <button class="btn-icon" 
+                                                title="Buat Tagihan"
                                                 data-action="generate-salary-bill" 
                                                 data-worker-id="${workerId}"
                                                 data-worker-name="${worker.workerName}"
@@ -2588,9 +2648,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 data-end-date="${endDate.toISOString().slice(0, 10)}"
                                                 data-record-ids="${worker.recordIds.join(',')}"
                                                 >
-                                            Buat Tagihan
+                                            <span class="material-symbols-outlined">request_quote</span>
                                         </button>
-                                    </td>
+                                    </td>`}
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2653,8 +2713,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // --- FITUR BARU: ABSENSI MANUAL ---
-
     function _getManualAttendanceHTML() {
         const today = new Date().toISOString().slice(0,10);
         const projectOptions = appState.projects.map(p => ({value: p.id, text: p.projectName}));
@@ -2665,15 +2723,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="recap-filters">
                         <div class="form-group">
                             <label for="manual-attendance-date">Tanggal</label>
-                            <input type="date" id="manual-attendance-date" value="${today}" required>
+                            <input type="date" id="manual-attendance-date" value="${today}" required ${isViewer() ? 'disabled' : ''}>
                         </div>
                         ${createMasterDataSelect('manual-attendance-project', 'Proyek', projectOptions, appState.projects[0]?.id || '')}
                     </div>
                 </div>
                 <div id="manual-attendance-list-container" style="margin-top: 1.5rem;"></div>
-                <div class="form-footer-actions">
+                ${isViewer() ? '' : `<div class="form-footer-actions">
                     <button type="submit" class="btn btn-primary">Simpan Absensi</button>
-                </div>
+                </div>`}
             </form>
         `;
     }
@@ -2709,25 +2767,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const listHTML = activeWorkers.map(worker => {
             const dailyWage = worker.projectWages?.[projectId] || 0;
             const existing = existingRecords.get(worker.id);
+            const currentStatus = existing?.attendanceStatus || 'absent';
+            let currentPay = 0;
+            if(currentStatus === 'full_day') currentPay = dailyWage;
+            else if(currentStatus === 'half_day') currentPay = dailyWage / 2;
             
-            // [FIX 1 & 4] Tampilkan nominal upah harian di kartu manual
             return `
-                <div class="manual-attendance-item card">
+                <div class="manual-attendance-item card" data-daily-wage="${dailyWage}">
                     <div class="worker-info">
                         <strong>${worker.workerName}</strong>
-                        <span>Upah: ${fmtIDR(dailyWage)}/hari</span>
+                        <span class="worker-wage" data-pay="${currentPay}">${fmtIDR(currentPay)}</span>
                     </div>
                     <div class="attendance-status-selector" data-worker-id="${worker.id}">
                         <label>
-                            <input type="radio" name="status_${worker.id}" value="full_day" ${existing?.attendanceStatus === 'full_day' ? 'checked' : ''}>
+                            <input type="radio" name="status_${worker.id}" value="full_day" ${currentStatus === 'full_day' ? 'checked' : ''} ${isViewer() ? 'disabled' : ''}>
                             <span>Hadir</span>
                         </label>
                         <label>
-                            <input type="radio" name="status_${worker.id}" value="half_day" ${existing?.attendanceStatus === 'half_day' ? 'checked' : ''}>
+                            <input type="radio" name="status_${worker.id}" value="half_day" ${currentStatus === 'half_day' ? 'checked' : ''} ${isViewer() ? 'disabled' : ''}>
                             <span>1/2 Hari</span>
                         </label>
                         <label>
-                            <input type="radio" name="status_${worker.id}" value="absent" ${!existing || existing.attendanceStatus === 'absent' ? 'checked' : ''}>
+                            <input type="radio" name="status_${worker.id}" value="absent" ${currentStatus === 'absent' ? 'checked' : ''} ${isViewer() ? 'disabled' : ''}>
                             <span>Absen</span>
                         </label>
                     </div>
@@ -2736,6 +2797,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).join('');
 
         container.innerHTML = listHTML;
+
+        // [FIX] Event listener for radio buttons to update pay in real-time
+        if(!isViewer()) {
+            container.querySelectorAll('.attendance-status-selector input[type="radio"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const card = e.target.closest('.manual-attendance-item');
+                    const wageEl = card.querySelector('.worker-wage');
+                    const dailyWage = Number(card.dataset.dailyWage);
+                    let newPay = 0;
+                    if(e.target.value === 'full_day') newPay = dailyWage;
+                    else if (e.target.value === 'half_day') newPay = dailyWage / 2;
+                    
+                    wageEl.textContent = fmtIDR(newPay);
+                    wageEl.dataset.pay = newPay;
+                });
+            });
+        }
     }
 
     async function handleSaveManualAttendance(e) {
@@ -2756,54 +2834,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             for(const workerEl of workers) {
                 const workerId = workerEl.dataset.workerId;
                 const statusInput = workerEl.querySelector('input:checked');
-                if (!statusInput) continue; // Skip if no selection
+                if (!statusInput) continue;
                 
                 const status = statusInput.value;
-                
                 const worker = appState.workers.find(w => w.id === workerId);
                 const dailyWage = worker?.projectWages?.[projectId] || 0;
-                let pay = 0;
-                if (status === 'full_day') pay = dailyWage;
-                else if (status === 'half_day') pay = dailyWage / 2;
+                const pay = Number(workerEl.closest('.manual-attendance-item').querySelector('.worker-wage').dataset.pay);
 
                 const recordData = {
-                    workerId,
-                    workerName: worker.workerName,
-                    projectId,
-                    date: Timestamp.fromDate(date),
-                    attendanceStatus: status,
-                    totalPay: pay,
-                    dailyWage,
-                    isPaid: false,
-                    type: 'manual',
-                    createdAt: serverTimestamp(),
-                    status: 'completed', // Manual entries are always 'completed'
+                    workerId, workerName: worker.workerName, projectId,
+                    date: Timestamp.fromDate(date), attendanceStatus: status, totalPay: pay,
+                    dailyWage, isPaid: false, type: 'manual', createdAt: serverTimestamp(),
+                    status: 'completed',
                 };
 
-                const startOfDay = new Date(date);
-                startOfDay.setHours(0,0,0,0);
-                const endOfDay = new Date(date);
-                endOfDay.setHours(23,59,59,999);
+                const startOfDay = new Date(date); startOfDay.setHours(0,0,0,0);
+                const endOfDay = new Date(date); endOfDay.setHours(23,59,59,999);
 
                 const q = query(attendanceRecordsCol, 
-                    where('workerId', '==', workerId), 
-                    where('projectId', '==', projectId),
-                    where('date', '>=', startOfDay),
-                    where('date', '<=', endOfDay),
+                    where('workerId', '==', workerId), where('projectId', '==', projectId),
+                    where('date', '>=', startOfDay), where('date', '<=', endOfDay),
                     where('type', '==', 'manual')
                 );
                 
                 const snap = await getDocs(q);
                 if (snap.empty) {
-                    if (status !== 'absent') { // Only save if not absent
-                        batch.set(doc(attendanceRecordsCol), recordData);
-                    }
+                    if (status !== 'absent') batch.set(doc(attendanceRecordsCol), recordData);
                 } else {
-                    if (status === 'absent') { // Delete if now absent
-                        batch.delete(snap.docs[0].ref);
-                    } else { // Update existing record
-                        batch.update(snap.docs[0].ref, recordData);
-                    }
+                    if (status === 'absent') batch.delete(snap.docs[0].ref);
+                    else batch.update(snap.docs[0].ref, recordData);
                 }
             }
 
@@ -2818,7 +2877,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function handleManageUsers() {
         await fetchData('users', membersCol, 'name');
         const usersHTML = appState.users.map(user => {
-            // [FIX] Add default values to prevent toLowerCase on undefined
             const userRole = user.role || 'viewer';
             const userStatus = user.status || 'pending';
 
@@ -2833,12 +2891,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
                 <div class="master-data-item-actions">
-                    ${user.status === 'pending' ? `<button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>` : ''}
+                    ${user.status === 'pending' ? `
+                        <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
+                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
+                    ` : ''}
                     ${user.status === 'active' && user.role !== 'Owner' ? `
                         ${user.role !== 'Editor' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-editor" title="Jadikan Editor"><span class="material-symbols-outlined">edit_note</span></button>`:''}
                         ${user.role !== 'Viewer' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-viewer" title="Jadikan Viewer"><span class="material-symbols-outlined">visibility</span></button>`:''}
+                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
                     `: ''}
-                    ${user.role !== 'Owner' ? `<button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>` : ''}
                 </div>
             </div>
         `}).join('');
@@ -2862,7 +2923,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'approve': { message: `Setujui ${user.name} sebagai Viewer?`, data: { status: 'active', role: 'Viewer' } },
             'make-editor': { message: `Ubah peran ${user.name} menjadi Editor?`, data: { role: 'Editor' } },
             'make-viewer': { message: `Ubah peran ${user.name} menjadi Viewer?`, data: { role: 'Viewer' } },
-            'delete': { message: `Hapus pengguna ${user.name}? Aksi ini tidak dapat dibatalkan.`, data: null }
+            'delete': { message: `Hapus atau tolak pengguna ${user.name}? Aksi ini tidak dapat dibatalkan.`, data: null }
         };
         const action = actionMap[type];
         if (!action) return;
@@ -2913,55 +2974,167 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
         uploader.click();
     }
+
+    // =======================================================
+    //         [UPDATE] FUNGSI-FUNGSI HALAMAN LAPORAN
+    // =======================================================
+    async function renderLaporanPage() {
+        const container = $('.page-container');
+        if (typeof Chart === 'undefined') {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+            document.head.appendChild(script);
+            await new Promise(resolve => script.onload = resolve);
+        }
     
+        const tabs = [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}];
+        container.innerHTML = `
+            <div class="card card-pad" style="margin-bottom: 1.5rem;">
+                <h5 class="section-title-owner" style="margin-top:0;">Ringkasan Keuangan</h5>
+                <div style="height: 200px; position: relative;"><canvas id="financial-summary-chart"></canvas></div>
+            </div>
+            <div class="sub-nav">
+                ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+            </div>
+            <div id="sub-page-content"></div>
+        `;
+    
+        const renderTabContent = async (tabId) => {
+            appState.activeSubPage.set('laporan', tabId);
+            const contentContainer = $('#sub-page-content');
+            contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+            
+            if (tabId === 'laba_rugi') await _renderLaporanLabaRugi(contentContainer);
+            else if (tabId === 'arus_kas') await _renderLaporanArusKas(contentContainer);
+        };
+    
+        $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
+            $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            renderTabContent(e.currentTarget.dataset.tab);
+        }));
+        
+        const lastSubPage = appState.activeSubPage.get('laporan') || tabs[0].id;
+        $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
+        await renderTabContent(lastSubPage);
+        _renderFinancialSummaryChart(); 
+    }
+
+    async function _renderFinancialSummaryChart() {
+        const canvas = $('#financial-summary-chart');
+        if (!canvas) return;
+
+        await Promise.all([ fetchData('projects', projectsCol), fetchData('incomes', incomesCol), fetchData('expenses', expensesCol), fetchData('fundingSources', fundingSourcesCol) ]);
+
+        const mainProject = appState.projects.find(p => p.projectType === 'main_income');
+        const pureIncome = appState.incomes.filter(inc => inc.projectId === mainProject?.id).reduce((sum, inc) => sum + inc.amount, 0);
+        const totalExpenses = appState.expenses.reduce((sum, exp) => sum + exp.amount, 0);
+        const totalFunding = appState.fundingSources.reduce((sum, fund) => sum + fund.totalAmount, 0);
+
+        const ctx = canvas.getContext('2d');
+        if (window.financialChart) window.financialChart.destroy();
+        
+        window.financialChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Pemasukan Murni', 'Pengeluaran', 'Pendanaan'],
+                datasets: [{ data: [pureIncome, totalExpenses, totalFunding], backgroundColor: ['#28a745', '#f87171', '#ffca2c'], borderColor: 'var(--panel)', borderWidth: 4 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: 'var(--text-dim)', boxWidth: 12, padding: 20, font: { weight: '500' } } } } }
+        });
+    }
+
+    async function _renderLaporanLabaRugi(container) {
+        const mainProject = appState.projects.find(p => p.projectType === 'main_income');
+        const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
+        
+        // Pendapatan
+        const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
+        // HPP = Biaya Material & Gaji Proyek Utama
+        const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
+        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0); // Asumsi semua gaji masuk HPP
+        const hpp = hpp_material + hpp_gaji;
+        const labaKotor = pendapatan - hpp;
+        // Beban Operasional Proyek Utama
+        const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
+        // Beban Proyek Internal
+        const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        const labaBersih = labaKotor - bebanOperasional - bebanInternal;
+
+        container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Laporan Laba Rugi</h5>
+            <dl class="detail-list">
+                <div><dt>Pendapatan</dt><dd class="positive">${fmtIDR(pendapatan)}</dd></div>
+                <div><dt>Harga Pokok Penjualan (HPP)</dt><dd class="negative">- ${fmtIDR(hpp)}</dd></div>
+                <div class="summary-row"><dt>Laba Kotor</dt><dd>${fmtIDR(labaKotor)}</dd></div>
+                <div><dt>Beban Operasional</dt><dd class="negative">- ${fmtIDR(bebanOperasional)}</dd></div>
+                <div><dt>Beban Proyek Internal</dt><dd class="negative">- ${fmtIDR(bebanInternal)}</dd></div>
+                <div class="summary-row final"><dt>Laba Bersih</dt><dd>${fmtIDR(labaBersih)}</dd></div>
+            </dl>
+        </div>`;
+    }
+
+    async function _renderLaporanArusKas(container) {
+        // Kas Masuk
+        const kasMasukTermin = appState.incomes.reduce((sum, i) => sum + i.amount, 0);
+        const kasMasukPinjaman = appState.fundingSources.reduce((sum, f) => sum + f.totalAmount, 0);
+        const totalKasMasuk = kasMasukTermin + kasMasukPinjaman;
+        // Kas Keluar
+        const kasKeluarBayar = appState.expenses.filter(e=>e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
+        const totalKasKeluar = kasKeluarBayar; // Di masa depan bisa tambah bayar cicilan pinjaman
+        const arusKasBersih = totalKasMasuk - totalKasKeluar;
+
+         container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Laporan Arus Kas</h5>
+            <dl class="detail-list">
+                <div class="category-title"><dt>Arus Kas Masuk</dt><dd></dd></div>
+                <div><dt>Penerimaan Termin</dt><dd class="positive">${fmtIDR(kasMasukTermin)}</dd></div>
+                <div><dt>Penerimaan Pinjaman</dt><dd class="positive">${fmtIDR(kasMasukPinjaman)}</dd></div>
+                <div class="summary-row"><dt>Total Arus Kas Masuk</dt><dd>${fmtIDR(totalKasMasuk)}</dd></div>
+                
+                <div class="category-title"><dt>Arus Kas Keluar</dt><dd></dd></div>
+                <div><dt>Pembayaran Beban Lunas</dt><dd class="negative">- ${fmtIDR(kasKeluarBayar)}</dd></div>
+                <div class="summary-row"><dt>Total Arus Kas Keluar</dt><dd class="negative">- ${fmtIDR(totalKasKeluar)}</dd></div>
+                
+                <div class="summary-row final"><dt>Arus Kas Bersih</dt><dd>${fmtIDR(arusKasBersih)}</dd></div>
+            </dl>
+        </div>`;
+    }
+
     // =======================================================
     //         FUNGSI SINKRONISASI OFFLINE
     // =======================================================
     async function syncOfflineData() {
         const offlineItems = await offlineDB.offlineQueue.toArray();
-        if (offlineItems.length === 0) {
-            console.log('Tidak ada data offline untuk disinkronkan.');
-            return;
-        }
-
+        if (offlineItems.length === 0) { console.log('Tidak ada data offline untuk disinkronkan.'); return; }
         toast('loading', `Menyinkronkan ${offlineItems.length} data...`);
-
         for (const item of offlineItems) {
             try {
                 if (item.type === 'expense') {
                     const expenseDocRef = await addDoc(expensesCol, item.payload);
                     if (item.payload.status === 'unpaid') {
                         await addDoc(billsCol, {
-                            expenseId: expenseDocRef.id,
-                            description: item.payload.description,
-                            amount: item.payload.amount,
-                            paidAmount: 0,
-                            dueDate: item.payload.date,
-                            status: 'unpaid',
-                            type: item.payload.type,
-                            createdAt: serverTimestamp()
+                            expenseId: expenseDocRef.id, description: item.payload.description,
+                            amount: item.payload.amount, paidAmount: 0, dueDate: item.payload.date,
+                            status: 'unpaid', type: item.payload.type, createdAt: serverTimestamp()
                         });
                     }
-
                     const offlineFiles = await offlineDB.offlineFiles.where('parentId').equals(item.id).toArray();
                     for(const fileRecord of offlineFiles) {
                         await _uploadFileInBackground(expenseDocRef.id, fileRecord.field, fileRecord.file);
                         await offlineDB.offlineFiles.delete(fileRecord.id);
                     }
                 }
-                // Tambahkan logika untuk tipe data lain (e.g., attendance) di sini
-
                 await offlineDB.offlineQueue.delete(item.id);
-            } catch (error) {
-                console.error('Gagal menyinkronkan item:', item, error);
-            }
+            } catch (error) { console.error('Gagal menyinkronkan item:', item, error); }
         }
-
         toast('success', 'Sinkronisasi selesai.');
-        // Refresh halaman saat ini untuk menampilkan data baru
         renderPageContent();
     }
 
 
     init();
 });
+
