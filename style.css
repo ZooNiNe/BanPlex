@@ -56,7 +56,7 @@ body {
 .content-wrapper { flex: 1; display: flex; flex-direction: column; min-width: 0; padding-bottom: 80px; }
 .main-header { 
   position: sticky; top: 0; z-index: 900; 
-  background-color: color-mix(in srgb, var(--panel) 80%, transparent);
+  background-color: color-mix(in srgb, var(--info) 85%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line); 
   padding: .75rem var(--spacing); 
@@ -111,10 +111,19 @@ body {
 .section-title-owner { font-size: 1rem; font-weight: 600; color: var(--text-dim); margin: 2rem 0 1rem 0; text-transform: uppercase; letter-spacing: .05em; }
 .profile-role-badge { margin-top: 0.75rem; background-color: var(--info); color: #fff; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
 
-.status-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing); margin-bottom: 1.5rem; }
+.status-card-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); 
+    gap: var(--spacing); 
+    margin-bottom: 1.5rem; 
+}
 .status-card { background-color: var(--panel); padding: 1rem; border-radius: var(--radius); text-align: center; }
 .status-card .label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.25rem; }
-.status-card strong { font-size: 1.5rem; font-weight: 700; }
+.status-card strong { 
+    font-size: 1.3rem; 
+    font-weight: 700;
+    word-break: break-word;
+}
 .status-card strong.positive { color: var(--success); }
 .status-card strong.negative { color: var(--danger); }
 .alert-container { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
@@ -188,7 +197,18 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
     .modal-bg.show .modal-content { transform: scale(1); }
 }
 
-.popup-container { position: fixed; bottom: 1rem; left: 1rem; right: 1rem; z-index: 2000; display: flex; justify-content: center; pointer-events: none; transform: translateY(150%); transition: transform 0.4s; }
+.popup-container { 
+    position: fixed; 
+    top: 1rem; 
+    left: 1rem; 
+    right: 1rem; 
+    z-index: 2000; 
+    display: flex; 
+    justify-content: center; 
+    pointer-events: none; 
+    transform: translateY(-150%); 
+    transition: transform 0.4s; 
+}
 .popup-container.show { transform: translateY(0); }
 .popup-content { display: flex; align-items: center; gap: 0.75rem; border-radius: var(--radius); padding: 0.8rem 1.25rem; color: #fff; background-color: #334155; box-shadow: var(--shadow-lg); pointer-events: auto; max-width: 400px; width: 100%; }
 .popup-content p { color: #fff; margin: 0; }
@@ -258,20 +278,40 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
  * FORM FAKTUR MATERIAL (REVISI)
  * ======================================================= */
 .invoice-section-title, .detail-section-title { font-size: 1rem; font-weight: 600; color: var(--text-dim); margin: 1.5rem 0 1rem 0; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
-#invoice-items-container { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
-.invoice-item-row { display: grid; grid-template-columns: 1fr 80px 1.2fr auto; gap: .75rem; align-items: center; background-color: var(--bg); padding: .75rem; border-radius: var(--radius-sm); }
-.invoice-item-row input { margin: 0; padding: .5rem .75rem; }
-.invoice-item-row .item-name { grid-column: 1 / -1; margin-bottom: .5rem; }
-.invoice-item-row .item-price { grid-column: 1 / 2; }
-.invoice-item-row .item-qty { grid-column: 2 / 3; }
-.invoice-item-row .item-total { 
-    grid-column: 3 / 4; font-weight: 600; text-align: right; 
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem;
+#invoice-items-container { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
+
+.invoice-item-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .75rem;
+    background-color: var(--bg);
+    padding: .75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
 }
-.invoice-item-row .remove-item-btn { grid-column: 4 / 5; justify-self: end; }
+.invoice-item-row .item-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 60px auto auto;
+    gap: .5rem;
+    align-items: center;
+}
+.invoice-item-row input { margin: 0; }
+.invoice-item-row .item-total { 
+    font-weight: 600; 
+    text-align: right; 
+    padding-right: .5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#add-invoice-item-btn {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
 .invoice-total { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid var(--line); }
 .invoice-total strong { color: var(--info); font-size: 1.25rem; }
-
 
 /* =======================================================
  * DETAIL TAGIHAN & LAPORAN
@@ -310,7 +350,6 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
     flex-shrink: 0;
 }
 
-
 /* =======================================================
  * HALAMAN ABSENSI & LOG
  * ======================================================= */
@@ -338,7 +377,6 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .recap-table td { vertical-align: middle; }
 .recap-table tr:last-child td { border-bottom: none; }
 .recap-table strong { color: var(--info); }
-.btn-sm { padding: .3rem .8rem; font-size: .8rem; border-radius: var(--radius-sm); }
 .recap-actions-cell {
     display: flex;
     gap: 0.5rem;
@@ -396,4 +434,3 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .log-user { font-weight: 600; }
 .log-time { font-size: .8rem; color: var(--text-dim); }
 .log-action { margin: 0; }
-

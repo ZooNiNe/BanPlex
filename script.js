@@ -2029,7 +2029,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                     break;
                 case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
-                case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
+                case 'delete-master-item': if (isViewer()) return; handleDeleteItem(id, type); break;
                 case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
                 case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
                 case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
@@ -3275,32 +3275,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         if(rows.length === 0) {
             toast('error', 'Tidak ada data untuk diunduh.'); return;
         }
-
+    
         const headers = ["Tanggal", "Deskripsi", "Pemasukan", "Pengeluaran", "Saldo"];
-        const data = [...rows, ...foot].map(row => {
+        
+        // Memproses baris dari tbody
+        const data = rows.map(row => {
             const cols = row.querySelectorAll('td');
-            return [
-                cols[0].textContent,
-                cols[1].textContent,
-                cols[2].textContent,
-                cols[3].textContent,
-                cols[4].textContent,
-            ];
+            if (cols.length < 5) return ['', '', '', '', '']; // Safety check
+            // Menggunakan Array.from untuk mengubah NodeList menjadi array dan kemudian memetakannya
+            return Array.from(cols).map(col => `"${(col.textContent || '').trim()}"`);
         });
-
+    
+        // Memproses baris dari tfoot secara terpisah
+        if (foot.length > 0) {
+            foot.forEach(row => {
+                const cols = row.querySelectorAll('td');
+                // Penanganan khusus untuk baris footer dengan colspan
+                if (cols.length === 4 && cols[0].getAttribute('colspan') === '2') {
+                     data.push([
+                        `"${(cols[0].textContent || '').trim()}"`, // "Total"
+                        '""', // Kolom kosong untuk deskripsi
+                        `"${(cols[1].textContent || '').trim()}"`,
+                        `"${(cols[2].textContent || '').trim()}"`,
+                        `"${(cols[3].textContent || '').trim()}"`
+                    ]);
+                }
+            });
+        }
+    
         const date = new Date().toISOString().slice(0, 10);
         const filename = `Rekapan-Transaksi-${date}`;
         
         if (format === 'csv') {
             _downloadCSV(headers, data, filename + '.csv');
         } else { // pdf
-            _downloadPDF(headers, data, filename + '.pdf');
+            // Mengubah data untuk PDF agar tidak ada tanda kutip
+            const pdfData = data.map(row => row.map(cell => cell.replace(/"/g, '')));
+            _downloadPDF(headers, pdfData, filename + '.pdf');
         }
     }
 
     function _downloadCSV(headers, data, filename) {
+        // Gabungkan header dan baris data, lalu gabungkan setiap baris menjadi string CSV
         const csvContent = "data:text/csv;charset=utf-8," 
-            + [headers, ...data].map(e => e.join(",")).join("\n");
+            + [headers.join(","), ...data.map(e => e.join(","))].join("\n");
+            
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
@@ -3313,6 +3332,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function _downloadPDF(headers, data, filename) {
         toast('loading', 'Membuat PDF...');
+        // Pastikan jspdf dan autoTable sudah dimuat
+        if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF.autoTable === 'undefined') {
+            toast('error', 'Pustaka PDF gagal dimuat. Coba muat ulang halaman.');
+            console.error('jsPDF atau autoTable tidak ditemukan.');
+            return;
+        }
+
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
@@ -3398,4 +3424,3 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     init();
 });
-
