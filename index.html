@@ -21,11 +21,19 @@
     <!-- Stylesheet -->
     <link rel="stylesheet" href="style.css">
 
-    <!-- Dexie.js for IndexedDB -->
+    <!-- Pustaka Eksternal -->
     <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
-    <div id="app-shell">
+    <!-- [BARU] Global Loader untuk refresh halaman -->
+    <div id="global-loader" class="global-loader">
+        <div class="spinner"></div>
+    </div>
+
+    <div id="app-shell" style="display: none;">
         <div class="content-wrapper">
             <header class="main-header">
                 <div class="header-left">
@@ -37,7 +45,7 @@
                 </div>
             </header>
             <main class="page-container">
-                <!-- Konten halaman akan dirender di sini oleh JavaScript -->
+                <!-- Konten halaman akan dirender di sini -->
             </main>
         </div>
         <nav class="bottom-nav" id="bottom-nav">
@@ -54,7 +62,7 @@
         </div>
     </div>
     
-    <!-- PWA Update Notification -->
+    <!-- Notifikasi Update PWA -->
     <div id="update-notification" class="popup-container" style="bottom: 80px; display: none;">
         <div class="popup-content popup-success">
              <span class="material-symbols-outlined">system_update</span>
@@ -63,12 +71,11 @@
         </div>
     </div>
 
-    <!-- Hidden file input for uploads -->
+    <!-- Input file tersembunyi -->
     <input type="file" id="attachment-uploader" accept="image/*" class="hidden" multiple>
 
-    <!-- Main Script -->
+    <!-- Script Utama -->
     <script type="module" src="script.js"></script>
-
     <script>
         if ('serviceWorker' in navigator) {
             let newWorker;
@@ -96,3 +103,4 @@
     </script>
 </body>
 </html>
+

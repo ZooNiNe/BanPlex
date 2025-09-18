@@ -10,7 +10,7 @@ import {
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
     query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, enableNetwork, disableNetwork
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
 document.addEventListener('DOMContentLoaded', async () => {
 
@@ -35,22 +35,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         activePage: localStorage.getItem('lastActivePage') || 'dashboard',
         activeSubPage: new Map(),
         isOnline: navigator.onLine,
-        // --- Cache Data ---
-        projects: [],
-        clients: [],
-        fundingCreditors: [],
-        operationalCategories: [],
-        materialCategories: [],
-        otherCategories: [],
-        suppliers: [],
-        workers: [],
-        professions: [],
-        incomes: [],
-        fundingSources: [],
-        expenses: [],
-        bills: [],
-        attendance: new Map(), // Menyimpan data absensi hari ini
-        users: [],
+        projects: [], clients: [], fundingCreditors: [], operationalCategories: [],
+        materialCategories: [], otherCategories: [], suppliers: [], workers: [],
+        professions: [], incomes: [], fundingSources: [], expenses: [], bills: [],
+        attendance: new Map(), users: [],
     };
 
     const app = initializeApp(firebaseConfig);
@@ -64,8 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =======================================================
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(1).stores({
-        offlineQueue: '++id, type, payload', // type: 'expense', 'attendance', etc.
-        offlineFiles: '++id, parentId, field, file' // To store blobs for offline uploads
+        offlineQueue: '++id, type, payload',
+        offlineFiles: '++id, parentId, field, file'
     });
     
     const $ = (s, context = document) => context.querySelector(s);
@@ -88,6 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fundingSourcesCol = collection(db, 'teams', TEAM_ID, 'funding_sources');
     const expensesCol = collection(db, 'teams', TEAM_ID, 'expenses');
     const billsCol = collection(db, 'teams', TEAM_ID, 'bills');
+    const logsCol = collection(db, 'teams', TEAM_ID, 'logs'); // [BARU] Koleksi untuk Log Aktivitas
 
     const masterDataConfig = {
         'projects': { collection: projectsCol, stateKey: 'projects', nameField: 'projectName', title: 'Proyek' },
@@ -97,13 +86,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         'other-cats': { collection: otherCatsCol, stateKey: 'otherCategories', nameField: 'categoryName', title: 'Kategori Lainnya' },
         'suppliers': { collection: suppliersCol, stateKey: 'suppliers', nameField: 'supplierName', title: 'Supplier' },
         'professions': { collection: professionsCol, stateKey: 'professions', nameField: 'professionName', title: 'Profesi' },
-        'workers': { 
-            collection: workersCol, 
-            stateKey: 'workers', 
-            nameField: 'workerName', 
-            title: 'Pekerja',
-        },
+        'workers': { collection: workersCol, stateKey: 'workers', nameField: 'workerName', title: 'Pekerja', },
     };
+
+    // =======================================================
+    //                [BARU] LOG AKTIVITAS
+    // =======================================================
+    async function _logActivity(action, details = {}) {
+        if (!appState.currentUser || isViewer()) return;
+        try {
+            await addDoc(logsCol, {
+                action,
+                details,
+                userId: appState.currentUser.uid,
+                userName: appState.currentUser.displayName,
+                createdAt: serverTimestamp()
+            });
+        } catch (error) {
+            console.error("Gagal mencatat aktivitas:", error);
+        }
+    }
 
     // =======================================================
     //         SISTEM TOAST & MODAL
@@ -139,11 +141,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (type === 'login') return simpleModal('Login', '<p>Gunakan akun Google Anda.</p>', '<button id="google-login-btn" class="btn btn-primary">Masuk dengan Google</button>');
         if (type === 'confirmLogout') return simpleModal('Keluar', '<p>Anda yakin ingin keluar?</p>', '<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-logout-btn" class="btn btn-danger">Keluar</button>');
-        if (type === 'confirmDelete' || type === 'confirmPayment' || type === 'confirmEdit' || type === 'confirmPayBill' || type === 'confirmGenerateBill' || type === 'confirmUserAction') {
-            const titles = { confirmDelete: 'Konfirmasi Hapus', confirmPayment: 'Konfirmasi Pembayaran', confirmEdit: 'Konfirmasi Perubahan', confirmPayBill: 'Konfirmasi Pembayaran', confirmGenerateBill: 'Konfirmasi Buat Tagihan', confirmUserAction: 'Konfirmasi Aksi' };
-            const messages = { confirmDelete: 'Anda yakin ingin menghapus data ini?', confirmPayment: 'Anda yakin ingin melanjutkan pembayaran?', confirmEdit: 'Anda yakin ingin menyimpan perubahan?', confirmPayBill: 'Anda yakin ingin melanjutkan pembayaran ini?', confirmGenerateBill: 'Anda akan membuat tagihan gaji untuk pekerja ini. Lanjutkan?', confirmUserAction: 'Apakah Anda yakin?' };
-            const confirmTexts = { confirmDelete: 'Hapus', confirmPayment: 'Ya, Bayar', confirmEdit: 'Ya, Simpan', confirmPayBill: 'Ya, Bayar', confirmGenerateBill: 'Ya, Buat Tagihan', confirmUserAction: 'Ya, Lanjutkan' };
-            const confirmClasses = { confirmDelete: 'btn-danger', confirmPayment: 'btn-success', confirmEdit: 'btn-primary', confirmPayBill: 'btn-success', confirmGenerateBill: 'btn-primary', confirmUserAction: 'btn-primary' };
+        if (type === 'confirmDelete' || type === 'confirmPayment' || type === 'confirmEdit' || type === 'confirmPayBill' || type === 'confirmGenerateBill' || type === 'confirmUserAction' || type === 'confirmDeleteAttachment') {
+            const titles = { confirmDelete: 'Konfirmasi Hapus', confirmPayment: 'Konfirmasi Pembayaran', confirmEdit: 'Konfirmasi Perubahan', confirmPayBill: 'Konfirmasi Pembayaran', confirmGenerateBill: 'Konfirmasi Buat Tagihan', confirmUserAction: 'Konfirmasi Aksi', confirmDeleteAttachment: 'Hapus Lampiran' };
+            const messages = { confirmDelete: 'Anda yakin ingin menghapus data ini?', confirmPayment: 'Anda yakin ingin melanjutkan pembayaran?', confirmEdit: 'Anda yakin ingin menyimpan perubahan?', confirmPayBill: 'Anda yakin ingin melanjutkan pembayaran ini?', confirmGenerateBill: 'Anda akan membuat tagihan gaji untuk pekerja ini. Lanjutkan?', confirmUserAction: 'Apakah Anda yakin?', confirmDeleteAttachment: 'Anda yakin ingin menghapus lampiran ini?' };
+            const confirmTexts = { confirmDelete: 'Hapus', confirmPayment: 'Ya, Bayar', confirmEdit: 'Ya, Simpan', confirmPayBill: 'Ya, Bayar', confirmGenerateBill: 'Ya, Buat Tagihan', confirmUserAction: 'Ya, Lanjutkan', confirmDeleteAttachment: 'Ya, Hapus' };
+            const confirmClasses = { confirmDelete: 'btn-danger', confirmPayment: 'btn-success', confirmEdit: 'btn-primary', confirmPayBill: 'btn-success', confirmGenerateBill: 'btn-primary', confirmUserAction: 'btn-primary', confirmDeleteAttachment: 'btn-danger' };
             
             return simpleModal(
                 titles[type],
@@ -252,10 +254,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const { role = 'Guest', status = 'pending' } = docSnap.data();
                     Object.assign(appState, { userRole: role, userStatus: status });
                 }
+                $('#global-loader').style.display = 'none';
+                $('#app-shell').style.display = 'flex';
                 renderUI();
             });
         } else {
             Object.assign(appState, { currentUser: null, userRole: 'Guest', userStatus: null });
+            $('#global-loader').style.display = 'none';
+            $('#app-shell').style.display = 'flex';
             renderUI();
         }
     });
@@ -297,6 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
             'laporan': renderLaporanPage,
             'absensi': renderAbsensiPage,
+            'log_aktivitas': renderLogAktivitasPage, // [BARU] Halaman Log Aktivitas
         };
         
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
@@ -359,7 +366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     //             DATA FETCHING
     // =======================================================
     const fetchData = async (key, col, order = 'createdAt') => {
-        appState[key] = []; // Clear cache before fetching
+        appState[key] = [];
         try {
             const snap = await getDocs(query(col, orderBy(order, 'desc')));
             appState[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -410,6 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="nav-card" data-action="manage-master" data-type="projects"><div class="nav-card-icon"><span class="material-symbols-outlined">foundation</span></div><span class="nav-card-label">Kelola Proyek</span></div>
                     <div class="nav-card" data-action="manage-master-global"><div class="nav-card-icon"><span class="material-symbols-outlined">database</span></div><span class="nav-card-label">Master Data</span></div>
                     <div class="nav-card" data-action="manage-users"><div class="nav-card-icon"><span class="material-symbols-outlined">group</span></div><span class="nav-card-label">Manajemen User</span></div>
+                    <div class="nav-card" data-action="navigate" data-nav="log_aktivitas"><div class="nav-card-icon"><span class="material-symbols-outlined">history</span></div><span class="nav-card-label">Log Aktivitas</span></div>
                 </div>
             </div>` : ''}
         `;
@@ -721,10 +729,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         toast('loading', 'Menyimpan...');
         try {
+            let docData;
             if (type === 'termin') {
                 const projectId = $('#pemasukan-proyek', form).value;
                 if (!projectId) { toast('error', 'Silakan pilih proyek terkait.'); return; }
-                await addDoc(incomesCol, { amount, date, projectId, createdAt: serverTimestamp() });
+                docData = { amount, date, projectId, createdAt: serverTimestamp() };
+                await addDoc(incomesCol, docData);
+                await _logActivity(`Menambah Pemasukan Termin: ${fmtIDR(amount)}`, { docId: docData.projectId, amount: docData.amount });
             } else {
                 const creditorId = $('#pemasukan-kreditur', form).value;
                 if (!creditorId) { toast('error', 'Silakan pilih kreditur.'); return; }
@@ -744,6 +755,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     loanData.totalRepaymentAmount = totalRepayment;
                 }
                 await addDoc(fundingSourcesCol, loanData);
+                await _logActivity(`Menambah Pinjaman: ${fmtIDR(amount)}`, { creditorId, amount });
             }
             toast('success', 'Data berhasil disimpan!');
             form.reset();
@@ -781,7 +793,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 queries.push(where("type", "==", "gaji"));
             } else {
                 queries.push(where("type", "!=", "gaji"));
-                // This is the inequality, so the first orderBy must be 'type'
                 queries.push(orderBy("type"));
             }
     
@@ -864,16 +875,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!billSnap.exists()) {
                         throw new Error('Tagihan tidak ditemukan!');
                     }
-
-                    const expenseId = billSnap.data().expenseId;
+                    const billData = billSnap.data();
+                    const expenseId = billData.expenseId;
                     
                     const batch = writeBatch(db);
-                    batch.update(billRef, { status: 'paid', paidAmount: billSnap.data().amount, paidAt: serverTimestamp() });
+                    batch.update(billRef, { status: 'paid', paidAmount: billData.amount, paidAt: serverTimestamp() });
                     if(expenseId) {
                         const expenseRef = doc(expensesCol, expenseId);
                         batch.update(expenseRef, { status: 'paid' });
                     }
                     await batch.commit();
+                    await _logActivity(`Melunasi Tagihan: ${billData.description}`, { billId, amount: billData.amount });
                     
                     toast('success', 'Tagihan berhasil dilunasi.');
                     renderTagihanPage();
@@ -1096,6 +1108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         createdAt: serverTimestamp()
                     });
                 }
+                await _logActivity(`Menambah Pengeluaran: ${dataToSave.description}`, { docId: expenseDocRef.id, amount: dataToSave.amount, status });
                 toast('success', 'Data berhasil disimpan!');
                 if (invoiceFile) _uploadFileInBackground(expenseDocRef.id, 'invoiceUrl', invoiceFile);
                 if (deliveryOrderFile) _uploadFileInBackground(expenseDocRef.id, 'deliveryOrderUrl', deliveryOrderFile);
@@ -1219,7 +1232,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { value: 'main_income', text: 'Pemasukan Utama' },
                 { value: 'internal_expense', text: 'Biaya Internal (Laba Bersih)' }
             ];
-            formFieldsHTML += createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, 'main_income');
+            formFieldsHTML += `
+                <div class="form-group">
+                    <label>Anggaran Proyek</label>
+                    <input type="text" inputmode="numeric" name="budget" placeholder="mis. 100.000.000">
+                </div>
+                ${createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, 'main_income')}
+            `;
         }
 
         if (type === 'workers') {
@@ -1281,7 +1300,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     
         if (type === 'suppliers') dataToAdd.category = form.elements.itemCategory.value;
-        if (type === 'projects') dataToAdd.projectType = form.elements.projectType.value;
+        if (type === 'projects') {
+            dataToAdd.projectType = form.elements.projectType.value;
+            dataToAdd.budget = parseFormattedNumber(form.elements.budget.value);
+        }
         if (type === 'workers') {
             dataToAdd.professionId = form.elements.professionId.value;
             dataToAdd.status = form.elements.workerStatus.value;
@@ -1306,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await addDoc(config.collection, dataToAdd);
             }
 
+            await _logActivity(`Menambah Master Data: ${config.title}`, { name: itemName });
             toast('success', `${config.title} baru berhasil ditambahkan.`);
             form.reset();
             $$('.custom-select-trigger span:first-child', form).forEach(s => s.textContent = 'Pilih...');
@@ -1343,7 +1366,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { value: 'main_income', text: 'Pemasukan Utama' },
                 { value: 'internal_expense', text: 'Biaya Internal (Laba Bersih)' }
             ];
-            formFieldsHTML += createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, item.projectType || 'main_income');
+            const budget = item.budget ? new Intl.NumberFormat('id-ID').format(item.budget) : '';
+            formFieldsHTML += `
+                <div class="form-group">
+                    <label>Anggaran Proyek</label>
+                    <input type="text" inputmode="numeric" name="budget" placeholder="mis. 100.000.000" value="${budget}">
+                </div>
+                ${createMasterDataSelect('projectType', 'Jenis Proyek', projectTypeOptions, item.projectType || 'main_income')}
+            `;
         }
 
         if (type === 'workers') {
@@ -1389,7 +1419,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const dataToUpdate = { [config.nameField]: newName };
 
         if (type === 'suppliers') dataToUpdate.category = form.elements.itemCategory.value;
-        if (type === 'projects') dataToUpdate.projectType = form.elements.projectType.value;
+        if (type === 'projects') {
+            dataToUpdate.projectType = form.elements.projectType.value;
+            dataToUpdate.budget = parseFormattedNumber(form.elements.budget.value);
+        }
         if (type === 'workers') {
             dataToUpdate.professionId = form.elements.professionId.value;
             dataToUpdate.status = form.elements.workerStatus.value;
@@ -1414,6 +1447,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 await updateDoc(doc(config.collection, id), dataToUpdate);
             }
+            await _logActivity(`Memperbarui Master Data: ${config.title}`, { docId: id, newName });
             toast('success', `${config.title} berhasil diperbarui.`);
             await handleManageMasterData(type);
         } catch (error) {
@@ -1424,12 +1458,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function handleDeleteMasterItem(id, type) {
         const config = masterDataConfig[type];
         if (!config) return;
+        const item = appState[config.stateKey].find(i => i.id === id);
+
         createModal('confirmDelete', { 
-            message: `Anda yakin ingin menghapus ${config.title} ini?`,
+            message: `Anda yakin ingin menghapus ${config.title} "${item[config.nameField]}" ini?`,
             onConfirm: async () => {
                 toast('loading', `Menghapus ${config.title}...`);
                 try {
                     await deleteDoc(doc(config.collection, id));
+                    await _logActivity(`Menghapus Master Data: ${config.title}`, { docId: id, name: item[config.nameField] });
                     toast('success', `${config.title} berhasil dihapus.`);
                     await handleManageMasterData(type);
                 } catch (error) {
@@ -1448,11 +1485,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             onConfirm: async () => {
                 toast('loading', 'Menghapus data...');
                 try {
-                    let col;
-                    if(type === 'termin') col = incomesCol;
-                    else if (type === 'pinjaman') col = fundingSourcesCol;
-                    else if (type === 'expense') col = expensesCol;
-                    else if (type === 'bill') col = billsCol;
+                    let col, item;
+                    if(type === 'termin') { col = incomesCol; item = appState.incomes.find(i=>i.id===id); }
+                    else if (type === 'pinjaman') { col = fundingSourcesCol; item = appState.fundingSources.find(i=>i.id===id); }
+                    else if (type === 'expense') { col = expensesCol; item = appState.expenses.find(i=>i.id===id); }
+                    else if (type === 'bill') { col = billsCol; item = appState.bills.find(i=>i.id===id); }
                     else return;
                     
                     await deleteDoc(doc(col, id));
@@ -1464,6 +1501,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         billSnap.docs.forEach(d => batch.delete(d.ref));
                         await batch.commit();
                     }
+                    await _logActivity(`Menghapus Data ${type}`, { docId: id, description: item?.description || item?.amount });
 
                     toast('success', 'Data berhasil dihapus.');
                     
@@ -1539,6 +1577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             });
             
+            await _logActivity(`Membayar Pinjaman`, { docId: id, amount });
             toast('success', 'Pembayaran berhasil dicatat.');
             if (appState.activePage === 'pemasukan') await _rerenderPemasukanList(type);
 
@@ -1552,29 +1591,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         let list, item, formHTML = 'Form tidak tersedia.';
 
         if (type === 'expense') {
-            await Promise.all([
-                _rerenderPengeluaranList('operasional'),
-                _rerenderPengeluaranList('material'),
-                _rerenderPengeluaranList('lainnya')
-            ]);
+            await Promise.all([ _rerenderPengeluaranList('operasional'), _rerenderPengeluaranList('material'), _rerenderPengeluaranList('lainnya') ]);
             list = appState.expenses;
-        } else if (type === 'termin') {
-            list = appState.incomes;
-        } else if (type === 'pinjaman') {
-            list = appState.fundingSources;
-        } else {
-            toast('error', 'Tipe data tidak dikenal.'); return;
-        }
+        } else if (type === 'termin') { list = appState.incomes; } 
+        else if (type === 'pinjaman') { list = appState.fundingSources; } 
+        else { toast('error', 'Tipe data tidak dikenal.'); return; }
 
         item = list.find(i => i.id === id);
         if (!item) { 
              const docRef = doc(expensesCol, id);
              const docSnap = await getDoc(docRef);
-             if (docSnap.exists()) {
-                item = {id: docSnap.id, ...docSnap.data()};
-             } else {
-                toast('error', 'Data tidak ditemukan.'); return;
-             }
+             if (docSnap.exists()) item = {id: docSnap.id, ...docSnap.data()};
+             else { toast('error', 'Data tidak ditemukan.'); return; }
         }
         
         const date = item.date.toDate().toISOString().slice(0, 10);
@@ -1583,14 +1611,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
             formHTML = `
                 <form id="edit-item-form" data-id="${id}" data-type="${type}">
-                    <div class="form-group">
-                        <label>Jumlah</label>
-                        <input type="text" inputmode="numeric" name="amount" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Tanggal</label>
-                        <input type="date" name="date" value="${date}" required>
-                    </div>
+                    <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" name="amount" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
+                    <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
                     ${createMasterDataSelect('projectId', 'Proyek Terkait', projectOptions, item.projectId, 'projects')}
                     <button type="submit" class="btn btn-primary">Update</button>
                 </form>
@@ -1615,28 +1637,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             let categoryOptions = [], masterType = '', categoryLabel = '';
             if (item.type === 'operasional') {
                 categoryOptions = appState.operationalCategories.map(c => ({ value: c.id, text: c.categoryName }));
-                masterType = 'op-cats';
-                categoryLabel = 'Kategori Operasional';
+                masterType = 'op-cats'; categoryLabel = 'Kategori Operasional';
             } else if (item.type === 'lainnya') {
                 categoryOptions = appState.otherCategories.map(c => ({ value: c.id, text: c.categoryName }));
-                masterType = 'other-cats';
-                categoryLabel = 'Kategori Lainnya';
+                masterType = 'other-cats'; categoryLabel = 'Kategori Lainnya';
             }
             formHTML = `
                 <form id="edit-item-form" data-id="${id}" data-type="${type}">
-                     <div class="form-group">
-                        <label>Jumlah</label>
-                        <input type="text" name="amount" inputmode="numeric" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required>
-                    </div>
-                     <div class="form-group">
-                        <label>Deskripsi</label>
-                        <input type="text" name="description" value="${item.description}" required>
-                    </div>
+                     <div class="form-group"><label>Jumlah</label><input type="text" name="amount" inputmode="numeric" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
+                     <div class="form-group"><label>Deskripsi</label><input type="text" name="description" value="${item.description}" required></div>
                     ${masterType ? createMasterDataSelect('categoryId', categoryLabel, categoryOptions, item.categoryId, masterType) : ''}
-                    <div class="form-group">
-                        <label>Tanggal</label>
-                        <input type="date" name="date" value="${date}" required>
-                    </div>
+                    <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
                     <p>Status saat ini: <strong>${item.status === 'paid' ? 'Lunas' : 'Tagihan'}</strong>. Perubahan status tidak dapat dilakukan di sini.</p>
                     <button type="submit" class="btn btn-primary">Update</button>
                 </form>
@@ -1655,36 +1666,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (type === 'termin') {
                 col = incomesCol;
-                dataToUpdate = {
-                    amount: parseFormattedNumber(form.elements.amount.value),
-                    date: new Date(form.elements.date.value),
-                    projectId: form.elements.projectId.value,
-                };
+                dataToUpdate = { amount: parseFormattedNumber(form.elements.amount.value), date: new Date(form.elements.date.value), projectId: form.elements.projectId.value, };
             } else if (type === 'pinjaman') {
                 col = fundingSourcesCol;
-                dataToUpdate = {
-                    totalAmount: parseFormattedNumber(form.elements.totalAmount.value),
-                    date: new Date(form.elements.date.value),
-                    creditorId: form.elements.creditorId.value,
-                    interestType: form.elements.interestType.value,
-                };
+                dataToUpdate = { totalAmount: parseFormattedNumber(form.elements.totalAmount.value), date: new Date(form.elements.date.value), creditorId: form.elements.creditorId.value, interestType: form.elements.interestType.value };
                 if (dataToUpdate.interestType === 'interest') {
                     dataToUpdate.rate = Number(form.elements.rate.value);
                     dataToUpdate.tenor = Number(form.elements.tenor.value);
                     dataToUpdate.totalRepaymentAmount = dataToUpdate.totalAmount * (1 + (dataToUpdate.rate / 100 * dataToUpdate.tenor));
                 } else {
-                    dataToUpdate.rate = null;
-                    dataToUpdate.tenor = null;
-                    dataToUpdate.totalRepaymentAmount = null;
+                    dataToUpdate.rate = null; dataToUpdate.tenor = null; dataToUpdate.totalRepaymentAmount = null;
                 }
             } else if (type === 'expense') {
                 col = expensesCol;
-                dataToUpdate = {
-                    amount: parseFormattedNumber(form.elements.amount.value),
-                    description: form.elements.description.value,
-                    date: new Date(form.elements.date.value),
-                    categoryId: form.elements.categoryId?.value || '',
-                };
+                dataToUpdate = { amount: parseFormattedNumber(form.elements.amount.value), description: form.elements.description.value, date: new Date(form.elements.date.value), categoryId: form.elements.categoryId?.value || '' };
             } else return;
             
             await updateDoc(doc(col, id), dataToUpdate);
@@ -1694,13 +1689,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                  const billSnap = await getDocs(q);
                  if (!billSnap.empty) {
                      const billRef = billSnap.docs[0].ref;
-                     await updateDoc(billRef, {
-                         amount: dataToUpdate.amount,
-                         description: dataToUpdate.description,
-                         dueDate: dataToUpdate.date
-                     });
+                     await updateDoc(billRef, { amount: dataToUpdate.amount, description: dataToUpdate.description, dueDate: dataToUpdate.date });
                  }
             }
+            await _logActivity(`Memperbarui Data: ${type}`, { docId: id, description: dataToUpdate.description || dataToUpdate.amount });
 
             toast('success', 'Data berhasil diperbarui.');
             if (appState.activePage === 'pemasukan') await _rerenderPemasukanList(appState.activeSubPage.get('pemasukan'));
@@ -1888,7 +1880,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     //         INISIALISASI & EVENT LISTENER UTAMA
     // =======================================================
     function init() {
-        renderUI();
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
                 $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
@@ -1901,8 +1892,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const card = actionTarget.closest('[data-id]');
             let { id, type } = { ...card?.dataset, ...actionTarget.dataset };
             let expenseId = actionTarget.dataset.expenseId || card?.dataset.expenseId;
+            let manager = actionTarget.closest('.master-data-manager');
+            if (manager) type = manager.dataset.type;
 
-            if (actionTarget.matches('[data-action$="-master-item"]') && isViewer()) return;
+            if (isViewer() && actionTarget.dataset.action.startsWith('manage')) return;
 
             switch (actionTarget.dataset.action) {
                 case 'navigate': handleNavigation(actionTarget.dataset.nav); break;
@@ -1922,7 +1915,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 case 'open-bill-detail': {
                     if(!card) return;
                     e.preventDefault();
-                    handleOpenBillDetail(id);
+                    handleOpenBillDetail(id, expenseId);
                     break;
                 }
                 case 'open-actions': {
@@ -1966,26 +1959,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     createModal('actionsMenu', { actions, targetRect: actionTarget.getBoundingClientRect() });
                     break;
                 }
-                case 'delete-item': 
-                    if (isViewer()) return;
-                    handleDeleteItem(expenseId || id, type); 
-                    break;
-                case 'edit-item': 
-                    if (isViewer()) return;
-                    handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); 
-                    break;
-                case 'pay-item': 
-                    if (isViewer()) return;
-                    if (id && type) handlePaymentModal(id, type); 
-                    break;
-                case 'pay-bill': 
-                    if (isViewer()) return;
-                    if (id) handlePayBillModal(id); 
-                    break;
-                case 'manage-master': 
-                    if (isViewer()) return;
-                    handleManageMasterData(actionTarget.dataset.type); 
-                    break;
+                case 'delete-item': if (isViewer()) return; handleDeleteItem(expenseId || id, type); break;
+                case 'edit-item': if (isViewer()) return; handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); break;
+                case 'pay-item': if (isViewer()) return; if (id && type) handlePaymentModal(id, type); break;
+                case 'pay-bill': if (isViewer()) return; if (id) handlePayBillModal(id); break;
+                case 'manage-master': if (isViewer()) return; handleManageMasterData(actionTarget.dataset.type); break;
                 case 'manage-master-global':
                      if (isViewer()) return;
                      createModal('dataDetail', {
@@ -2002,48 +1980,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                         `
                     });
                     break;
-                case 'edit-master-item': 
-                     if (isViewer()) return;
-                     if (actionTarget.closest('.master-data-manager')) {
-                        type = actionTarget.closest('.master-data-manager').dataset.type;
-                     }
-                     handleEditMasterItem(id, type); 
-                     break;
-                case 'delete-master-item': 
-                    if (isViewer()) return;
-                    if (actionTarget.closest('.master-data-manager')) {
-                        type = actionTarget.closest('.master-data-manager').dataset.type;
-                    }
-                    handleDeleteMasterItem(id, type); 
-                    break;
-                case 'check-in': 
-                    if (isViewer()) return;
-                    handleCheckIn(actionTarget.dataset.id); 
-                    break;
-                case 'check-out': 
-                    if (isViewer()) return;
-                    handleCheckOut(actionTarget.dataset.id); 
-                    break;
-                case 'edit-attendance': 
-                    if (isViewer()) return;
-                    handleEditAttendanceModal(actionTarget.dataset.id); 
-                    break;
-                case 'generate-salary-bill': 
-                    if (isViewer()) return;
-                    handleGenerateSalaryBill(actionTarget.dataset); 
-                    break;
-                case 'manage-users': 
-                    if (isViewer()) return;
-                    handleManageUsers(); 
-                    break;
-                case 'user-action': 
-                    if (isViewer()) return;
-                    handleUserAction(actionTarget.dataset); 
-                    break;
-                case 'upload-attachment': 
-                    if (isViewer()) return;
-                    handleUploadAttachment(id); 
-                    break;
+                case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
+                case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
+                case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
+                case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
+                case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
+                case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
+                case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
+                case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
+                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(id); break;
+                case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
+                case 'download-report': _handleDownloadReport('pdf'); break;
+                case 'download-csv': _handleDownloadReport('csv'); break;
             }
         });
 
@@ -2061,22 +2009,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK TAGIHAN
     // =======================================================
-    async function handleOpenBillDetail(billId) {
-        const bill = appState.bills.find(b => b.id === billId);
-        if(!bill) { toast('error', 'Data tagihan tidak ditemukan.'); return; }
+    async function handleOpenBillDetail(billId, expenseId) {
+        let bill = null;
+        if(billId) bill = appState.bills.find(b => b.id === billId);
         
-        let content;
-        if (bill.type === 'gaji') {
+        let targetExpenseId = expenseId || bill?.expenseId;
+
+        if(!targetExpenseId && bill?.type !== 'gaji') {
+            toast('error', 'Data pengeluaran terkait tidak ditemukan.');
+            return;
+        }
+
+        let content, title;
+
+        if (bill && bill.type === 'gaji') {
             content = _createSalaryBillDetailContentHTML(bill);
+            title = `Detail Tagihan: ${bill.description}`;
         } else {
-            if(!bill.expenseId) { toast('error', 'Data pengeluaran terkait tidak ditemukan.'); return; }
-            const expenseDoc = await getDoc(doc(expensesCol, bill.expenseId));
+            const expenseDoc = await getDoc(doc(expensesCol, targetExpenseId));
             if(!expenseDoc.exists()){ toast('error', 'Data pengeluaran terkait tidak ditemukan.'); return; }
-            const expenseData = expenseDoc.data();
+            const expenseData = {id: expenseDoc.id, ...expenseDoc.data()};
             content = await _createBillDetailContentHTML(bill, expenseData);
+            title = `Detail Pengeluaran: ${expenseData.description}`;
         }
         
-        createModal('dataDetail', { title: `Detail Tagihan: ${bill.description}`, content });
+        createModal('dataDetail', { title, content });
     }
 
     function _createSalaryBillDetailContentHTML(bill) {
@@ -2097,7 +2054,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function _createBillDetailContentHTML(bill, expenseData) {
-        const remainingAmount = (bill.amount || 0) - (bill.paidAmount || 0);
+        const remainingAmount = bill ? (bill.amount || 0) - (bill.paidAmount || 0) : 0;
         
         let itemsHTML = '';
         if (expenseData.type === 'material' && expenseData.items) {
@@ -2116,32 +2073,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let attachmentsHTML = '';
         if (expenseData.invoiceUrl || expenseData.deliveryOrderUrl) {
+            const createAttachmentItem = (url, label, field) => {
+                if(!url) return '';
+                return `
+                <div class="attachment-item">
+                    <a href="${url}" target="_blank"><img src="${url}" alt="${label}" class="attachment-thumbnail"></a>
+                    <span>${label}</span>
+                    <div class="attachment-actions">
+                        <a href="${url}" download class="btn-icon" title="Unduh"><span class="material-symbols-outlined">download</span></a>
+                        ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${expenseData.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
+                    </div>
+                </div>`;
+            }
             attachmentsHTML = `
                 <h5 class="detail-section-title">Lampiran</h5>
                 <div class="attachment-gallery">
-                    ${expenseData.invoiceUrl ? `
-                        <div class="attachment-item">
-                            <a href="${expenseData.invoiceUrl}" target="_blank"><img src="${expenseData.invoiceUrl}" alt="Faktur" class="attachment-thumbnail"></a>
-                            <span>Bukti Faktur</span>
-                            <a href="${expenseData.invoiceUrl}" download class="btn-icon"><span class="material-symbols-outlined">download</span></a>
-                        </div>
-                    ` : ''}
-                    ${expenseData.deliveryOrderUrl ? `
-                        <div class="attachment-item">
-                            <a href="${expenseData.deliveryOrderUrl}" target="_blank"><img src="${expenseData.deliveryOrderUrl}" alt="Surat Jalan" class="attachment-thumbnail"></a>
-                            <span>Surat Jalan</span>
-                            <a href="${expenseData.deliveryOrderUrl}" download class="btn-icon"><span class="material-symbols-outlined">download</span></a>
-                        </div>
-                    ` : ''}
+                    ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
+                    ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
                 </div>
             `;
         }
         
         return `
             <div class="payment-summary">
-                <div><span>Total Tagihan:</span><strong>${fmtIDR(bill.amount)}</strong></div>
+                <div><span>Total Pengeluaran:</span><strong>${fmtIDR(expenseData.amount)}</strong></div>
+                ${bill ? `
                 <div><span>Sudah Dibayar:</span><strong>${fmtIDR(bill.paidAmount || 0)}</strong></div>
                 <div class="remaining"><span>Sisa Tagihan:</span><strong>${fmtIDR(remainingAmount)}</strong></div>
+                ` : `<div class="status"><span>Status:</span><strong style="color:var(--success)">Lunas</strong></div>`}
             </div>
             ${itemsHTML}
             ${attachmentsHTML}
@@ -2210,6 +2169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const paymentRef = doc(collection(billRef, 'payments'));
                 transaction.set(paymentRef, { amount: amountToPay, date, createdAt: serverTimestamp() });
             });
+            await _logActivity(`Membayar Tagihan Cicilan`, { billId, amount: amountToPay });
             
             toast('success', 'Pembayaran berhasil dicatat.');
             if (appState.activePage === 'tagihan') renderTagihanPage();
@@ -2419,19 +2379,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!worker) throw new Error('Pekerja tidak ditemukan');
             
             const dailyWage = worker.projectWages?.[projectId] || 0;
-            const hourlyWage = dailyWage / 8; // Assume 8 hours work day
+            const hourlyWage = dailyWage / 8;
 
             await addDoc(attendanceRecordsCol, {
-                workerId,
-                projectId,
-                workerName: worker.workerName,
-                hourlyWage: hourlyWage,
-                date: Timestamp.now(),
-                checkIn: Timestamp.now(),
-                status: 'checked_in',
-                type: 'timestamp',
-                createdAt: serverTimestamp()
+                workerId, projectId, workerName: worker.workerName, hourlyWage,
+                date: Timestamp.now(), checkIn: Timestamp.now(), status: 'checked_in',
+                type: 'timestamp', createdAt: serverTimestamp()
             });
+            await _logActivity(`Check-in Pekerja: ${worker.workerName}`, { workerId, projectId });
             toast('success', `${worker.workerName} berhasil check in.`);
             _fetchTodaysAttendance().then(() => _rerenderAttendanceList());
         } catch (error) {
@@ -2452,23 +2407,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             const checkInTime = record.checkIn;
             
             const hours = (checkOutTime.seconds - checkInTime.seconds) / 3600;
-            const normalHours = Math.min(hours, 8); // Jam kerja normal maks 8 jam
-            const overtimeHours = Math.max(0, hours - 8); // Sisa jam adalah lembur
+            const normalHours = Math.min(hours, 8);
+            const overtimeHours = Math.max(0, hours - 8);
             
             const hourlyWage = record.hourlyWage || 0;
             const normalPay = normalHours * hourlyWage;
-            const overtimePay = overtimeHours * hourlyWage * 1.5; // Upah lembur 1.5x
+            const overtimePay = overtimeHours * hourlyWage * 1.5;
             const totalPay = normalPay + overtimePay;
 
             await updateDoc(recordRef, {
-                checkOut: checkOutTime,
-                status: 'completed',
-                workHours: hours,
-                normalHours,
-                overtimeHours,
-                totalPay,
-                isPaid: false
+                checkOut: checkOutTime, status: 'completed',
+                workHours: hours, normalHours, overtimeHours, totalPay, isPaid: false
             });
+            await _logActivity(`Check-out Pekerja: ${record.workerName}`, { recordId, totalPay });
             toast('success', `${record.workerName} berhasil check out.`);
             _fetchTodaysAttendance().then(() => _rerenderAttendanceList());
         } catch (error) {
@@ -2541,14 +2492,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const totalPay = normalPay + overtimePay;
     
             await updateDoc(recordRef, {
-                checkIn: newCheckIn,
-                checkOut: newCheckOut,
-                workHours: hours,
-                normalHours,
-                overtimeHours,
-                totalPay
+                checkIn: newCheckIn, checkOut: newCheckOut,
+                workHours: hours, normalHours, overtimeHours, totalPay
             });
             
+            await _logActivity(`Memperbarui Absensi: ${recordSnap.data().workerName}`, { recordId, totalPay });
             toast('success', 'Absensi berhasil diperbarui.');
             _fetchTodaysAttendance().then(() => _rerenderAttendanceList());
         } catch (error) {
@@ -2592,7 +2540,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
         const q = query(attendanceRecordsCol, 
             where('status', '==', 'completed'),
-            where('isPaid', '==', false), // Hanya ambil yang belum dibayar
+            where('isPaid', '==', false),
             where('date', '>=', startDate),
             where('date', '<=', endDate)
         );
@@ -2685,15 +2633,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
     
                     const billRef = await addDoc(billsCol, {
-                        description,
-                        amount,
-                        paidAmount: 0,
-                        dueDate: Timestamp.now(),
-                        status: 'unpaid',
-                        type: 'gaji',
-                        workerId,
-                        recordIds: recordIds.split(','),
-                        createdAt: serverTimestamp()
+                        description, amount, paidAmount: 0, dueDate: Timestamp.now(), status: 'unpaid',
+                        type: 'gaji', workerId, recordIds: recordIds.split(','), createdAt: serverTimestamp()
                     });
                     
                     const batch = writeBatch(db);
@@ -2701,6 +2642,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         batch.update(doc(attendanceRecordsCol, id), { isPaid: true, billId: billRef.id });
                     });
                     await batch.commit();
+                    await _logActivity(`Membuat Tagihan Gaji: ${description}`, { billId: billRef.id, amount });
     
                     toast('success', 'Tagihan gaji berhasil dibuat.');
                     handleNavigation('tagihan');
@@ -2798,7 +2740,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         container.innerHTML = listHTML;
 
-        // [FIX] Event listener for radio buttons to update pay in real-time
         if(!isViewer()) {
             container.querySelectorAll('.attendance-status-selector input[type="radio"]').forEach(radio => {
                 radio.addEventListener('change', (e) => {
@@ -2867,6 +2808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             await batch.commit();
+            await _logActivity(`Menyimpan Absensi Manual`, { date: date.toISOString().slice(0,10), projectId });
             toast('success', 'Absensi berhasil disimpan.');
         } catch (error) {
             toast('error', 'Gagal menyimpan absensi.');
@@ -2891,7 +2833,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
                 <div class="master-data-item-actions">
-                    ${user.status === 'pending' ? `
+                     ${user.status === 'pending' ? `
                         <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
                         <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
                     ` : ''}
@@ -2939,8 +2881,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } else {
                         await updateDoc(userRef, action.data);
                     }
+                    await _logActivity(`Aksi Pengguna: ${type}`, { targetUserId: id, targetUserName: user.name });
                     toast('success', 'Aksi berhasil dilakukan.');
-                    handleManageUsers(); // Refresh the list
+                    handleManageUsers();
                 } catch (error) {
                     toast('error', 'Gagal memproses aksi.');
                     console.error('User action error:', error);
@@ -2968,6 +2911,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             await _uploadFileInBackground(expenseId, 'invoiceUrl', file);
+            await _logActivity(`Mengupload Lampiran`, { expenseId });
             toast('success', 'Upload berhasil.');
             const currentTab = appState.activeSubPage.get('pengeluaran');
             _rerenderPengeluaranList(currentTab);
@@ -2975,8 +2919,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         uploader.click();
     }
 
+    async function handleDeleteAttachment(dataset) {
+        const { id, field } = dataset;
+        createModal('confirmDeleteAttachment', {
+            onConfirm: async () => {
+                toast('loading', 'Menghapus lampiran...');
+                try {
+                    const expenseRef = doc(expensesCol, id);
+                    const expenseSnap = await getDoc(expenseRef);
+                    if(!expenseSnap.exists()) throw new Error("Pengeluaran tidak ditemukan");
+
+                    const urlToDelete = expenseSnap.data()[field];
+                    if(urlToDelete) {
+                        const fileRef = ref(storage, urlToDelete);
+                        await deleteObject(fileRef);
+                    }
+                    await updateDoc(expenseRef, { [field]: '' });
+                    await _logActivity(`Menghapus Lampiran`, { expenseId: id, field });
+                    
+                    toast('success', 'Lampiran berhasil dihapus.');
+                    closeModal($('#dataDetail-modal')); // Close the current detail view
+                } catch(error) {
+                    toast('error', 'Gagal menghapus lampiran.');
+                    console.error("Attachment deletion error:", error);
+                }
+            }
+        });
+    }
+
     // =======================================================
-    //         [UPDATE] FUNGSI-FUNGSI HALAMAN LAPORAN
+    //         HALAMAN LAPORAN & LOG
     // =======================================================
     async function renderLaporanPage() {
         const container = $('.page-container');
@@ -2987,11 +2959,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             await new Promise(resolve => script.onload = resolve);
         }
     
-        const tabs = [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}];
+        const tabs = [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}, {id:'anggaran', label:'Anggaran'}, {id:'rekapan', label:'Rekapan'}];
         container.innerHTML = `
             <div class="card card-pad" style="margin-bottom: 1.5rem;">
                 <h5 class="section-title-owner" style="margin-top:0;">Ringkasan Keuangan</h5>
-                <div style="height: 200px; position: relative;"><canvas id="financial-summary-chart"></canvas></div>
+                <div style="height: 220px; position: relative;"><canvas id="financial-summary-chart"></canvas></div>
             </div>
             <div class="sub-nav">
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
@@ -3006,6 +2978,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (tabId === 'laba_rugi') await _renderLaporanLabaRugi(contentContainer);
             else if (tabId === 'arus_kas') await _renderLaporanArusKas(contentContainer);
+            else if (tabId === 'anggaran') await _renderLaporanAnggaran(contentContainer);
+            else if (tabId === 'rekapan') await _renderLaporanRekapan(contentContainer);
         };
     
         $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
@@ -3034,13 +3008,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ctx = canvas.getContext('2d');
         if (window.financialChart) window.financialChart.destroy();
         
+        const textColor = getComputedStyle(document.body).getPropertyValue('--text').trim();
+
         window.financialChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
                 labels: ['Pemasukan Murni', 'Pengeluaran', 'Pendanaan'],
-                datasets: [{ data: [pureIncome, totalExpenses, totalFunding], backgroundColor: ['#28a745', '#f87171', '#ffca2c'], borderColor: 'var(--panel)', borderWidth: 4 }]
+                datasets: [{ data: [pureIncome, totalExpenses, totalFunding], backgroundColor: ['#28a745', '#f87171', '#ffca2c'], borderWidth: 0 }]
             },
-            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: 'var(--text-dim)', boxWidth: 12, padding: 20, font: { weight: '500' } } } } }
+            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12, padding: 20, font: { weight: '500' } } } } }
         });
     }
 
@@ -3048,16 +3024,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
         const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
         
-        // Pendapatan
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
-        // HPP = Biaya Material & Gaji Proyek Utama
         const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
-        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0); // Asumsi semua gaji masuk HPP
+        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
         const hpp = hpp_material + hpp_gaji;
         const labaKotor = pendapatan - hpp;
-        // Beban Operasional Proyek Utama
         const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
-        // Beban Proyek Internal
         const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
         const labaBersih = labaKotor - bebanOperasional - bebanInternal;
 
@@ -3076,13 +3048,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function _renderLaporanArusKas(container) {
-        // Kas Masuk
         const kasMasukTermin = appState.incomes.reduce((sum, i) => sum + i.amount, 0);
         const kasMasukPinjaman = appState.fundingSources.reduce((sum, f) => sum + f.totalAmount, 0);
         const totalKasMasuk = kasMasukTermin + kasMasukPinjaman;
-        // Kas Keluar
         const kasKeluarBayar = appState.expenses.filter(e=>e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
-        const totalKasKeluar = kasKeluarBayar; // Di masa depan bisa tambah bayar cicilan pinjaman
+        const totalKasKeluar = kasKeluarBayar;
         const arusKasBersih = totalKasMasuk - totalKasKeluar;
 
          container.innerHTML = `
@@ -3103,8 +3073,244 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>`;
     }
 
+    async function _renderLaporanAnggaran(container) {
+        const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0);
+        
+        if (projectsWithBudget.length === 0) {
+            container.innerHTML = `<p class="empty-state">Belum ada proyek dengan anggaran yang ditetapkan.</p>`;
+            return;
+        }
+
+        const reportData = projectsWithBudget.map(proj => {
+            const actual = appState.expenses.filter(e => e.projectId === proj.id).reduce((sum, e) => sum + e.amount, 0);
+            const variance = proj.budget - actual;
+            const percentage = (actual / proj.budget) * 100;
+            return { ...proj, actual, variance, percentage };
+        });
+
+        container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Laporan Anggaran vs Aktual</h5>
+            <div class="recap-table-wrapper">
+                <table class="recap-table">
+                    <thead>
+                        <tr><th>Proyek</th><th>Anggaran</th><th>Aktual</th><th>Varian</th><th>Penggunaan</th></tr>
+                    </thead>
+                    <tbody>
+                    ${reportData.map(d => `
+                        <tr>
+                            <td>${d.projectName}</td>
+                            <td>${fmtIDR(d.budget)}</td>
+                            <td>${fmtIDR(d.actual)}</td>
+                            <td class="${d.variance >= 0 ? 'positive' : 'negative'}">${fmtIDR(d.variance)}</td>
+                            <td>
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar" style="width: ${Math.min(d.percentage, 100)}%; background-color: ${d.percentage > 100 ? 'var(--danger)' : 'var(--info)'};"></div>
+                                </div>
+                                <span>${d.percentage.toFixed(1)}%</span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
+    async function _renderLaporanRekapan(container) {
+        const projectOptions = [{value:'all', text: 'Semua Proyek'}, ...appState.projects.map(p => ({value: p.id, text: p.projectName}))];
+        const today = new Date();
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+        const todayStr = today.toISOString().slice(0, 10);
+
+        container.innerHTML = `
+            <div class="card card-pad">
+                <h5 class="report-title">Rekapan Transaksi</h5>
+                <div class="rekap-filters">
+                    ${createMasterDataSelect('rekapan-project', 'Proyek', projectOptions, 'all')}
+                    <div class="form-group">
+                        <label>Dari Tanggal</label>
+                        <input type="date" id="rekapan-start-date" value="${firstDayOfMonth}">
+                    </div>
+                     <div class="form-group">
+                        <label>Sampai Tanggal</label>
+                        <input type="date" id="rekapan-end-date" value="${todayStr}">
+                    </div>
+                </div>
+                <div class="rekap-actions">
+                    <button id="generate-rekapan-btn" class="btn btn-primary"><span class="material-symbols-outlined">summarize</span> Tampilkan</button>
+                    <button data-action="download-csv" class="btn btn-secondary"><span class="material-symbols-outlined">description</span> Unduh CSV</button>
+                    <button data-action="download-report" class="btn btn-secondary"><span class="material-symbols-outlined">picture_as_pdf</span> Unduh PDF</button>
+                </div>
+            </div>
+            <div id="rekapan-results-container" style="margin-top: 1.5rem;"></div>
+        `;
+        
+        $('#generate-rekapan-btn').addEventListener('click', _generateRekapanReport);
+    }
+
+    async function _generateRekapanReport() {
+        const container = $('#rekapan-results-container');
+        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+        const projectId = $('#rekapan-project').value;
+        const startDate = new Date($('#rekapan-start-date').value);
+        const endDate = new Date($('#rekapan-end-date').value);
+        endDate.setHours(23, 59, 59, 999);
+
+        let transactions = [];
+        appState.incomes.forEach(i => transactions.push({ date: i.date.toDate(), type: 'Pemasukan', description: 'Penerimaan Termin', amount: i.amount, projectId: i.projectId }));
+        appState.expenses.forEach(e => transactions.push({ date: e.date.toDate(), type: 'Pengeluaran', description: e.description, amount: -e.amount, projectId: e.projectId }));
+
+        const filtered = transactions.filter(t => (projectId === 'all' || t.projectId === projectId) && (t.date >= startDate && t.date <= endDate));
+
+        if (filtered.length === 0) {
+            container.innerHTML = `<p class="empty-state">Tidak ada transaksi pada periode dan proyek yang dipilih.</p>`;
+            return;
+        }
+
+        filtered.sort((a, b) => a.date - b.date);
+        let balance = 0;
+        const processed = filtered.map(t => { balance += t.amount; return {...t, balance}; });
+        
+        const totalPemasukan = processed.filter(t=>t.amount > 0).reduce((sum, t)=>sum+t.amount, 0);
+        const totalPengeluaran = processed.filter(t=>t.amount < 0).reduce((sum, t)=>sum+t.amount, 0);
+
+        const tableHTML = `
+            <div class="card card-pad" id="rekapan-printable-area">
+                <h5 class="report-title">Rekapan Periode ${startDate.toLocaleDateString('id-ID')} - ${endDate.toLocaleDateString('id-ID')}</h5>
+                <div class="recap-table-wrapper">
+                    <table class="recap-table">
+                        <thead>
+                            <tr><th>Tanggal</th><th>Deskripsi</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo</th></tr>
+                        </thead>
+                        <tbody>
+                            ${processed.map(t => `
+                                <tr>
+                                    <td>${t.date.toLocaleDateString('id-ID')}</td><td>${t.description}</td>
+                                    <td class="positive">${t.amount > 0 ? fmtIDR(t.amount) : '-'}</td>
+                                    <td class="negative">${t.amount < 0 ? fmtIDR(t.amount) : '-'}</td>
+                                    <td>${fmtIDR(t.balance)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                             <tr>
+                                <td colspan="2"><strong>Total</strong></td>
+                                <td class="positive"><strong>${fmtIDR(totalPemasukan)}</strong></td>
+                                <td class="negative"><strong>${fmtIDR(totalPengeluaran)}</strong></td>
+                                <td><strong>${fmtIDR(balance)}</strong></td>
+                             </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        `;
+        container.innerHTML = tableHTML;
+    }
+
+    async function _handleDownloadReport(format) {
+        const reportArea = $('#rekapan-results-container');
+        if (!reportArea.querySelector('table')) {
+            toast('error', 'Silakan tampilkan laporan terlebih dahulu.'); return;
+        }
+        
+        const rows = Array.from(reportArea.querySelectorAll('tbody tr'));
+        const foot = Array.from(reportArea.querySelectorAll('tfoot tr'));
+        if(rows.length === 0) {
+            toast('error', 'Tidak ada data untuk diunduh.'); return;
+        }
+
+        const headers = ["Tanggal", "Deskripsi", "Pemasukan", "Pengeluaran", "Saldo"];
+        const data = [...rows, ...foot].map(row => {
+            const cols = row.querySelectorAll('td');
+            return [
+                cols[0].textContent,
+                cols[1].textContent,
+                cols[2].textContent,
+                cols[3].textContent,
+                cols[4].textContent,
+            ];
+        });
+
+        const date = new Date().toISOString().slice(0, 10);
+        const filename = `Rekapan-Transaksi-${date}`;
+        
+        if (format === 'csv') {
+            _downloadCSV(headers, data, filename + '.csv');
+        } else { // pdf
+            _downloadPDF(headers, data, filename + '.pdf');
+        }
+    }
+
+    function _downloadCSV(headers, data, filename) {
+        const csvContent = "data:text/csv;charset=utf-8," 
+            + [headers, ...data].map(e => e.join(",")).join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast('success', 'CSV berhasil diunduh!');
+    }
+
+    function _downloadPDF(headers, data, filename) {
+        toast('loading', 'Membuat PDF...');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+
+        pdf.autoTable({
+            head: [headers],
+            body: data,
+            styles: {
+                fillColor: [35, 39, 45],
+                textColor: [225, 227, 230],
+                lineColor: [58, 65, 74],
+                lineWidth: 0.5
+            },
+            headStyles: { fillColor: [0, 128, 64] }
+        });
+
+        pdf.save(filename);
+        toast('success', 'PDF berhasil dibuat!');
+    }
+    
+    async function renderLogAktivitasPage() {
+        const container = $('.page-container');
+        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+        const q = query(logsCol, orderBy("createdAt", "desc"));
+        const logSnap = await getDocs(q);
+        const logs = logSnap.docs.map(d => ({id: d.id, ...d.data()}));
+
+        if (logs.length === 0) {
+            container.innerHTML = '<p class="empty-state">Belum ada aktivitas yang tercatat.</p>';
+            return;
+        }
+
+        const logHTML = logs.map(log => {
+            const date = log.createdAt.toDate();
+            const time = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            const day = date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
+
+            return `
+                <div class="log-item">
+                    <div class="log-item-header">
+                        <strong class="log-user">${log.userName}</strong>
+                        <span class="log-time">${day}, ${time}</span>
+                    </div>
+                    <p class="log-action">${log.action}</p>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `<div class="log-container">${logHTML}</div>`;
+    }
+
     // =======================================================
-    //         FUNGSI SINKRONISASI OFFLINE
+    //         SINKRONISASI OFFLINE
     // =======================================================
     async function syncOfflineData() {
         const offlineItems = await offlineDB.offlineQueue.toArray();
