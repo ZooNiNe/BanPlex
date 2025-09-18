@@ -2,10 +2,11 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- [REVISI] Meta viewport untuk mencegah zoom dan memberikan nuansa aplikasi native -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <title>BanPlex</title>
     <meta name="description" content="Aplikasi Manajemen Proyek Konstruksi">
-    <meta name="theme-color" content="#23272d"/>
+    <meta name="theme-color" content="#2563eb"/>
 
     <!-- Web App Manifest -->
     <link rel="manifest" href="manifest.json">
@@ -15,7 +16,7 @@
     <link rel="apple-touch-icon" href="icons-logo.png">
 
     <!-- Google Fonts & Icons -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     
     <!-- Stylesheet -->
@@ -28,7 +29,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
-    <!-- [BARU] Global Loader untuk refresh halaman -->
     <div id="global-loader" class="global-loader">
         <div class="spinner"></div>
     </div>
@@ -45,15 +45,12 @@
                 </div>
             </header>
             <main class="page-container">
-                <!-- Konten halaman akan dirender di sini oleh JavaScript -->
             </main>
         </div>
         <nav class="bottom-nav" id="bottom-nav">
-            <!-- Tombol navigasi akan dirender di sini -->
         </nav>
     </div>
 
-    <!-- Container untuk Modal dan Toast -->
     <div id="modal-container"></div>
     <div id="popup-container" class="popup-container">
         <div class="popup-content">
@@ -62,31 +59,21 @@
         </div>
     </div>
     
-    <!-- Notifikasi Update PWA -->
-    <div id="update-notification" class="popup-container" style="bottom: 80px; display: none;">
-        <div class="popup-content popup-success">
-             <span class="material-symbols-outlined">system_update</span>
-             <p>Versi baru tersedia!</p>
-             <button id="update-app-btn" class="btn btn-sm">Perbarui</button>
-        </div>
-    </div>
+    <!-- [DIHAPUS] Notifikasi Update PWA tidak lagi diperlukan -->
 
-    <!-- Input file tersembunyi -->
     <input type="file" id="attachment-uploader" accept="image/*" class="hidden" multiple>
 
-    <!-- Script Utama -->
     <script type="module" src="script.js"></script>
     <script>
+        // [REVISI] Logika auto-update PWA
         if ('serviceWorker' in navigator) {
-            let newWorker;
             navigator.serviceWorker.register('/service-worker.js').then(reg => {
-                console.log('Service Worker terdaftar.');
                 reg.addEventListener('updatefound', () => {
-                    newWorker = reg.installing;
+                    const newWorker = reg.installing;
                     newWorker.addEventListener('statechange', () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            const updateNotif = document.getElementById('update-notification');
-                            if (updateNotif) updateNotif.style.display = 'flex';
+                            // Tidak perlu notifikasi, service worker baru akan aktif otomatis
+                            console.log('Service worker baru terinstal.');
                         }
                     });
                 });
@@ -94,10 +81,12 @@
                 console.log('Registrasi Service Worker gagal:', error);
             });
 
-            const updateBtn = document.getElementById('update-app-btn');
-            updateBtn?.addEventListener('click', () => {
-                newWorker?.postMessage({ action: 'skipWaiting' });
+            // Event listener ini akan mendeteksi ketika service worker baru telah mengambil alih
+            let refreshing;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return;
                 window.location.reload();
+                refreshing = true;
             });
         }
     </script>

@@ -8,7 +8,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebas
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 import { 
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
-    query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, enableNetwork, disableNetwork
+    query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, 
+    enableIndexedDbPersistence,
+    enableNetwork, disableNetwork,
+
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
@@ -32,6 +35,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentUser: null,
         userRole: 'Guest',
         userStatus: null,
+        justLoggedIn: false,
+        pendingUsersCount: 0,
         activePage: localStorage.getItem('lastActivePage') || 'dashboard',
         activeSubPage: new Map(),
         isOnline: navigator.onLine,
@@ -45,11 +50,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const auth = getAuth(app);
     const db = getFirestore(app);
     const storage = getStorage(app);
-    const isViewer = () => appState.userRole === 'Viewer';
+    try {
+        await enableIndexedDbPersistence(db);
+        console.log("Mode offline Firestore diaktifkan.");
+    } catch (err) {
+        if (err.code == 'failed-precondition') {
+            console.warn("Gagal mengaktifkan mode offline (mungkin karena tab lain sudah terbuka).");
+        } else if (err.code == 'unimplemented') {
+            console.log("Mode offline tidak didukung di browser ini.");
+        }
+    }
 
-    // =======================================================
-    //                DATABASE OFFLINE (INDEXEDDB)
-    // =======================================================
+
+    const isViewer = () => appState.userRole === 'Viewer';
+    let pendingUsersUnsub = null;
+
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(1).stores({
         offlineQueue: '++id, type, payload',
@@ -89,9 +104,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         'workers': { collection: workersCol, stateKey: 'workers', nameField: 'workerName', title: 'Pekerja', },
     };
 
-    // =======================================================
-    //                LOG AKTIVITAS
-    // =======================================================
     async function _logActivity(action, details = {}) {
         if (!appState.currentUser || isViewer()) return;
         try {
@@ -107,9 +119,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // =======================================================
-    //         SISTEM TOAST & MODAL
-    // =======================================================
     let popupTimeout;
     function toast(kind, text, duration = 3200) {
         clearTimeout(popupTimeout);
@@ -141,11 +150,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (type === 'login') return simpleModal('Login', '<p>Gunakan akun Google Anda.</p>', '<button id="google-login-btn" class="btn btn-primary">Masuk dengan Google</button>');
         if (type === 'confirmLogout') return simpleModal('Keluar', '<p>Anda yakin ingin keluar?</p>', '<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-logout-btn" class="btn btn-danger">Keluar</button>');
-        if (type === 'confirmDelete' || type === 'confirmPayment' || type === 'confirmEdit' || type === 'confirmPayBill' || type === 'confirmGenerateBill' || type === 'confirmUserAction' || type === 'confirmDeleteAttachment') {
-            const titles = { confirmDelete: 'Konfirmasi Hapus', confirmPayment: 'Konfirmasi Pembayaran', confirmEdit: 'Konfirmasi Perubahan', confirmPayBill: 'Konfirmasi Pembayaran', confirmGenerateBill: 'Konfirmasi Buat Tagihan', confirmUserAction: 'Konfirmasi Aksi', confirmDeleteAttachment: 'Hapus Lampiran' };
-            const messages = { confirmDelete: 'Anda yakin ingin menghapus data ini?', confirmPayment: 'Anda yakin ingin melanjutkan pembayaran?', confirmEdit: 'Anda yakin ingin menyimpan perubahan?', confirmPayBill: 'Anda yakin ingin melanjutkan pembayaran ini?', confirmGenerateBill: 'Anda akan membuat tagihan gaji untuk pekerja ini. Lanjutkan?', confirmUserAction: 'Apakah Anda yakin?', confirmDeleteAttachment: 'Anda yakin ingin menghapus lampiran ini?' };
-            const confirmTexts = { confirmDelete: 'Hapus', confirmPayment: 'Ya, Bayar', confirmEdit: 'Ya, Simpan', confirmPayBill: 'Ya, Bayar', confirmGenerateBill: 'Ya, Buat Tagihan', confirmUserAction: 'Ya, Lanjutkan', confirmDeleteAttachment: 'Ya, Hapus' };
-            const confirmClasses = { confirmDelete: 'btn-danger', confirmPayment: 'btn-success', confirmEdit: 'btn-primary', confirmPayBill: 'btn-success', confirmGenerateBill: 'btn-primary', confirmUserAction: 'btn-primary', confirmDeleteAttachment: 'btn-danger' };
+        if (type === 'confirmDelete' || type === 'confirmPayment' || type === 'confirmEdit' || type === 'confirmPayBill' || type === 'confirmGenerateBill' || type === 'confirmUserAction' || type === 'confirmDeleteAttachment' || type === 'confirmDeleteRecap') {
+            const titles = { confirmDelete: 'Konfirmasi Hapus', confirmPayment: 'Konfirmasi Pembayaran', confirmEdit: 'Konfirmasi Perubahan', confirmPayBill: 'Konfirmasi Pembayaran', confirmGenerateBill: 'Konfirmasi Buat Tagihan', confirmUserAction: 'Konfirmasi Aksi', confirmDeleteAttachment: 'Hapus Lampiran', confirmDeleteRecap: 'Hapus Rekap Gaji' };
+            const messages = { confirmDelete: 'Anda yakin ingin menghapus data ini?', confirmPayment: 'Anda yakin ingin melanjutkan pembayaran?', confirmEdit: 'Anda yakin ingin menyimpan perubahan?', confirmPayBill: 'Anda yakin ingin melanjutkan pembayaran ini?', confirmGenerateBill: 'Anda akan membuat tagihan gaji untuk pekerja ini. Lanjutkan?', confirmUserAction: 'Apakah Anda yakin?', confirmDeleteAttachment: 'Anda yakin ingin menghapus lampiran ini?', confirmDeleteRecap: 'Menghapus rekap ini akan menghapus data absensi terkait. Aksi ini tidak dapat dibatalkan. Lanjutkan?' };
+            const confirmTexts = { confirmDelete: 'Hapus', confirmPayment: 'Ya, Bayar', confirmEdit: 'Ya, Simpan', confirmPayBill: 'Ya, Bayar', confirmGenerateBill: 'Ya, Buat Tagihan', confirmUserAction: 'Ya, Lanjutkan', confirmDeleteAttachment: 'Ya, Hapus', confirmDeleteRecap: 'Ya, Hapus' };
+            const confirmClasses = { confirmDelete: 'btn-danger', confirmPayment: 'btn-success', confirmEdit: 'btn-primary', confirmPayBill: 'btn-success', confirmGenerateBill: 'btn-primary', confirmUserAction: 'btn-primary', confirmDeleteAttachment: 'btn-danger', confirmDeleteRecap: 'btn-danger' };
             
             return simpleModal(
                 titles[type],
@@ -236,42 +245,132 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => modalEl.remove(), 300); 
     }
 
-    // =======================================================
-    //                 ALUR OTENTIKASI
-    // =======================================================
+    async function listenForPendingUsers() {
+        if (pendingUsersUnsub) pendingUsersUnsub();
+        const q = query(membersCol, where("status", "==", "pending"));
+        pendingUsersUnsub = onSnapshot(q, (snapshot) => {
+            appState.pendingUsersCount = snapshot.size;
+            renderBottomNav(); 
+        });
+    }
+
     onAuthStateChanged(auth, async (user) => {
         if (appState.roleUnsub) appState.roleUnsub();
+        if (pendingUsersUnsub) { pendingUsersUnsub(); pendingUsersUnsub = null; }
+    
         if (user) {
             appState.currentUser = user;
             const userDocRef = doc(membersCol, user.uid);
-            appState.roleUnsub = onSnapshot(userDocRef, async (docSnap) => {
+    
+            try {
+                const docSnap = await getDoc(userDocRef);
+    
                 if (!docSnap.exists()) {
+                    const userName = user.displayName || user.email.split('@')[0];
                     const isOwner = user.email === OWNER_EMAIL;
-                    const initialData = { email: user.email, name: user.displayName, photoURL: user.photoURL, role: isOwner ? 'Owner' : 'Viewer', status: isOwner ? 'active' : 'pending', createdAt: serverTimestamp() };
+                    const initialData = {
+                        email: user.email,
+                        name: userName,
+                        photoURL: user.photoURL,
+                        role: isOwner ? 'Owner' : 'Viewer',
+                        status: isOwner ? 'active' : 'pending',
+                        createdAt: serverTimestamp()
+                    };
+    
                     await setDoc(userDocRef, initialData);
-                    Object.assign(appState, { userRole: initialData.role, userStatus: initialData.status });
+                    
+                    appState.userRole = initialData.role;
+                    appState.userStatus = initialData.status;
+    
+                    if (appState.justLoggedIn) {
+                        toast('info', 'Akun Anda berhasil dibuat & menunggu persetujuan.');
+                    }
+                    
+                    attachRoleListener(userDocRef);
+                    
+                    $('#global-loader').style.display = 'none';
+                    $('#app-shell').style.display = 'flex';
+                    renderUI();
+                    appState.justLoggedIn = false;
+    
                 } else {
-                    const { role = 'Guest', status = 'pending' } = docSnap.data();
-                    Object.assign(appState, { userRole: role, userStatus: status });
+                    attachRoleListener(userDocRef);
                 }
-                $('#global-loader').style.display = 'none';
-                $('#app-shell').style.display = 'flex';
-                renderUI();
-            });
+            } catch (error) {
+                console.error("Error saat memeriksa atau membuat dokumen pengguna:", error);
+                if (error.code === 'permission-denied') {
+                    toast('error', 'Akses ditolak. Periksa Firestore Security Rules Anda.');
+                } else {
+                    toast('error', 'Gagal memverifikasi data pengguna.');
+                }
+                handleLogout();
+            }
+    
         } else {
-            Object.assign(appState, { currentUser: null, userRole: 'Guest', userStatus: null });
+            Object.assign(appState, { currentUser: null, userRole: 'Guest', userStatus: null, justLoggedIn: false, pendingUsersCount: 0 });
             $('#global-loader').style.display = 'none';
             $('#app-shell').style.display = 'flex';
             renderUI();
         }
     });
     
-    async function signInWithGoogle() { closeModal(); toast('loading', 'Menghubungkan...'); try { await signInWithPopup(auth, new GoogleAuthProvider()); toast('success', 'Login berhasil!'); } catch (error) { toast('error', `Login gagal.`); } }
-    async function handleLogout() { closeModal(); toast('loading', 'Keluar...'); try { await signOut(auth); toast('success', 'Anda telah keluar.'); } catch (error) { toast('error', `Gagal keluar.`); } }
+    function attachRoleListener(userDocRef) {
+        appState.roleUnsub = onSnapshot(userDocRef, (docSnap) => {
+            if (!docSnap.exists()) {
+                console.warn("Dokumen pengguna dihapus, melakukan logout.");
+                toast('error', 'Data akun Anda tidak ditemukan. Silakan login kembali.');
+                handleLogout();
+                return;
+            }
     
-    // =======================================================
-    //              FUNGSI RENDER & TAMPILAN
-    // =======================================================
+            const { role = 'Guest', status = 'pending' } = docSnap.data();
+            
+            if (appState.justLoggedIn) {
+                if (status === 'active') toast('success', `Selamat datang, ${docSnap.data().name}!`);
+                else if (status === 'pending') toast('info', 'Akun Anda masih menunggu persetujuan.');
+            }
+            
+            const hasStateChanged = appState.userRole !== role || appState.userStatus !== status;
+            Object.assign(appState, { userRole: role, userStatus: status });
+    
+            if (role === 'Owner') listenForPendingUsers();
+            
+            if (appState.justLoggedIn || hasStateChanged) {
+                $('#global-loader').style.display = 'none';
+                $('#app-shell').style.display = 'flex';
+                renderUI();
+            }
+            appState.justLoggedIn = false;
+        }, (error) => {
+            console.error("Role listener error:", error);
+            toast('error', 'Gagal memuat data peran. Mencoba keluar...');
+            handleLogout();
+        });
+    }
+        
+    async function signInWithGoogle() { 
+        closeModal($('#login-modal'));
+        toast('loading', 'Menghubungkan...'); 
+        try { 
+            appState.justLoggedIn = true;
+            await signInWithPopup(auth, new GoogleAuthProvider()); 
+        } catch (error) { 
+            toast('error', `Login gagal.`); 
+            appState.justLoggedIn = false;
+        } 
+    }
+
+    async function handleLogout() { 
+        closeModal($('#confirmLogout-modal')); 
+        toast('loading', 'Keluar...'); 
+        try { 
+            await signOut(auth); 
+            toast('success', 'Anda telah keluar.'); 
+        } catch (error) { 
+            toast('error', `Gagal keluar.`); 
+        } 
+    }
+    
     async function renderUI() {
         updateHeaderTitle();
         renderBottomNav();
@@ -288,7 +387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     function renderPendingLanding() {
         $('#bottom-nav').innerHTML = '';
-        $('.page-container').innerHTML = `<div class="card card-pad" style="max-width:520px;margin:2rem auto;text-align:center;"><h4>Menunggu Persetujuan</h4><p>Akun Anda sedang ditinjau oleh Owner.</p></div>`;
+        $('.page-container').innerHTML = `<div class="card card-pad" style="max-width:520px;margin:2rem auto;text-align:center;"><h4>Menunggu Persetujuan</h4><p>Akun Anda sedang ditinjau oleh Owner. Silakan hubungi Owner untuk persetujuan.</p></div>`;
     }
     
     async function renderPageContent() {
@@ -315,9 +414,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // =======================================================
-    //         LOGIKA NAVIGASI & HEADER
-    // =======================================================
     const ALL_NAV_LINKS = [
         { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'pemasukan', icon: 'account_balance_wallet', label: 'Pemasukan', roles: ['Owner'] },
@@ -351,6 +447,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         nav.innerHTML = accessibleLinks.map(item => `
             <button class="nav-item" data-action="navigate" data-nav="${item.id}" aria-label="${item.label}">
+                ${item.id === 'pengaturan' && appState.userRole === 'Owner' && appState.pendingUsersCount > 0 ? `<span class="notification-badge">${appState.pendingUsersCount}</span>` : ''}
                 <span class="material-symbols-outlined">${item.icon}</span>
                 <span class="nav-text">${item.label}</span>
             </button>
@@ -362,9 +459,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         $$(`.nav-item[data-nav="${appState.activePage}"]`).forEach(el => el.classList.add('active'));
     }
 
-    // =======================================================
-    //             DATA FETCHING
-    // =======================================================
     const fetchData = async (key, col, order = 'createdAt') => {
         appState[key] = [];
         try {
@@ -373,9 +467,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) { console.error(`Failed to fetch ${key}:`, e); toast('error', `Gagal memuat data ${key}.`); }
     };
 
-    // =======================================================
-    //             RENDER KONTEN HALAMAN
-    // =======================================================
     async function renderDashboardPage() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
@@ -405,8 +496,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const statusCardsHTML = `
             <div class="status-card-grid">
-                <div class="status-card"><span class="label">Laba Bersih</span><strong class="positive">${fmtIDR(labaBersih)}</strong></div>
-                <div class="status-card"><span class="label">Total Tagihan</span><strong class="negative">${fmtIDR(totalUnpaid)}</strong></div>
+                <div class="status-card">
+                    <span class="label">Laba Bersih</span>
+                    <strong class="positive ${fmtIDR(labaBersih).length > 15 ? 'small-value' : ''}">${fmtIDR(labaBersih)}</strong>
+                </div>
+                <div class="status-card">
+                    <span class="label">Total Tagihan</span>
+                    <strong class="negative ${fmtIDR(totalUnpaid).length > 15 ? 'small-value' : ''}">${fmtIDR(totalUnpaid)}</strong>
+                </div>
             </div>
         `;
         
@@ -421,12 +518,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
         const quickActionsHTML = `
             <h5 class="section-title-owner">Aksi Cepat</h5>
-            <div class="dashboard-nav-grid">
+            <div class="dashboard-actions-grid">
                 ${accessibleLinks.map(link => `
-                    <div class="nav-card" data-action="navigate" data-nav="${link.id}">
-                        <div class="nav-card-icon"><span class="material-symbols-outlined">${link.icon}</span></div>
-                        <span class="nav-card-label">${link.label}</span>
-                    </div>
+                    <button class="dashboard-action-item" data-action="navigate" data-nav="${link.id}">
+                        <div class="icon-wrapper"><span class="material-symbols-outlined">${link.icon}</span></div>
+                        <span class="label">${link.label}</span>
+                    </button>
                 `).join('')}
             </div>`;
 
@@ -438,6 +535,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { currentUser, userRole } = appState;
         const photo = currentUser?.photoURL || `https://placehold.co/80x80/e2e8f0/64748b?text=${(currentUser?.displayName||'U')[0]}`;
         
+        const ownerActions = [
+            { action: 'manage-master', type: 'projects', icon: 'foundation', label: 'Kelola Proyek' },
+            { action: 'manage-master-global', type: null, icon: 'database', label: 'Master Data' },
+            { action: 'manage-users', type: null, icon: 'group', label: 'Manajemen User' },
+            { action: 'navigate', nav: 'log_aktivitas', icon: 'history', label: 'Log Aktivitas' },
+        ];
+
         container.innerHTML = `
             <div class="profile-card-settings">
                 <img src="${photo}" alt="Avatar" class="profile-avatar">
@@ -451,15 +555,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </button>
                 </div>
             </div>
-            ${userRole === 'Owner' ? `<div id="owner-settings" data-role="Owner">
-                <h5 class="section-title-owner">Administrasi Owner</h5>
-                <div class="dashboard-nav-grid">
-                    <div class="nav-card" data-action="manage-master" data-type="projects"><div class="nav-card-icon"><span class="material-symbols-outlined">foundation</span></div><span class="nav-card-label">Kelola Proyek</span></div>
-                    <div class="nav-card" data-action="manage-master-global"><div class="nav-card-icon"><span class="material-symbols-outlined">database</span></div><span class="nav-card-label">Master Data</span></div>
-                    <div class="nav-card" data-action="manage-users"><div class="nav-card-icon"><span class="material-symbols-outlined">group</span></div><span class="nav-card-label">Manajemen User</span></div>
-                    <div class="nav-card" data-action="navigate" data-nav="log_aktivitas"><div class="nav-card-icon"><span class="material-symbols-outlined">history</span></div><span class="nav-card-label">Log Aktivitas</span></div>
+            ${userRole === 'Owner' ? `
+                <div id="owner-settings">
+                    <h5 class="section-title-owner">Administrasi Owner</h5>
+                    <div class="settings-list">
+                        ${ownerActions.map(act => `
+                            <div class="settings-list-item" data-action="${act.action}" ${act.type ? `data-type="${act.type}"` : ''} ${act.nav ? `data-nav="${act.nav}"` : ''}>
+                                <div class="icon-wrapper"><span class="material-symbols-outlined">${act.icon}</span></div>
+                                <span class="label">${act.label}</span>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
-            </div>` : ''}
+            ` : ''}
         `;
     }
 
@@ -888,7 +996,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="card-list-item-content" data-action="open-bill-detail">
                         <div class="card-list-item-details">
                             <h5 class="card-list-item-title">${item.description}</h5>
-                            <p class="card-list-item-subtitle">Jatuh tempo: ${date}</p>
+                            <p class="card-list-item-subtitle">${date}</p>
                         </div>
                         <div class="card-list-item-amount-wrapper">
                             <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
@@ -1032,10 +1140,10 @@ document.addEventListener('DOMContentLoaded', async () => {
              $('#material-invoice-form')?.addEventListener('submit', (e) => handleAddPengeluaran(e, type));
              $('#add-invoice-item-btn')?.addEventListener('click', _addInvoiceItemRow);
              $('#invoice-items-container')?.addEventListener('input', _handleInvoiceItemChange);
-             $('#pengeluaran-deskripsi').addEventListener('input', (e) => {
-                if(e.target.value.trim() === '') _generateInvoiceNumber();
-             });
-             _generateInvoiceNumber();
+             const invoiceNumberInput = $('#pengeluaran-deskripsi');
+             if (invoiceNumberInput) {
+                invoiceNumberInput.value = _generateInvoiceNumber();
+             }
         } else {
             $('#pengeluaran-jumlah')?.addEventListener('input', _formatNumberInput);
             $('#pengeluaran-form')?.addEventListener('submit', (e) => handleAddPengeluaran(e, type));
@@ -1159,7 +1267,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             _initCustomSelects(form);
              $$('.custom-select-trigger span:first-child', form).forEach(s => s.textContent = 'Pilih...');
             if(expenseData.type === 'material') {
-                $('#invoice-items-container').innerHTML = '';_addInvoiceItemRow();_updateInvoiceTotal();_generateInvoiceNumber();
+                $('#invoice-items-container').innerHTML = '';_addInvoiceItemRow();_updateInvoiceTotal();
+                const invoiceNumberInput = $('#pengeluaran-deskripsi');
+                if (invoiceNumberInput) invoiceNumberInput.value = _generateInvoiceNumber();
             }
             _rerenderPengeluaranList(currentSubPage);
     
@@ -1196,7 +1306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="card-list-item-content" data-action="open-bill-detail">
                             <div class="card-list-item-details">
                                 <h5 class="card-list-item-title">${item.description}</h5>
-                                <p class="card-list-item-subtitle">${getTitle(item)} - ${item.date.toDate().toLocaleDateString('id-ID')}</p>
+                                <p class="card-list-item-subtitle">${getTitle(item)} • ${item.date.toDate().toLocaleDateString('id-ID')}</p>
                             </div>
                             <div class="card-list-item-amount-wrapper">
                                 <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
@@ -1790,8 +1900,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             <form id="material-invoice-form" data-type="material">
                 ${createMasterDataSelect('project-id', 'Proyek', projectOptions, '', 'projects')}
                 <div class="form-group">
-                    <label>Deskripsi/No. Faktur</label>
-                    <input type="text" id="pengeluaran-deskripsi" required placeholder="Auto-generated invoice number">
+                    <label>No. Faktur</label>
+                    <input type="text" id="pengeluaran-deskripsi" readonly class="readonly-input">
                 </div>
                 ${createMasterDataSelect('supplier-id', 'Supplier', supplierOptions, '', 'suppliers')}
                  <div class="form-group">
@@ -1800,8 +1910,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <h5 class="invoice-section-title">Rincian Barang</h5>
+                <div class="invoice-items-header">
+                    <span>Nama Barang</span>
+                    <span>Harga & Qty</span>
+                    <span>Total</span>
+                </div>
                 <div id="invoice-items-container"></div>
-                <button type="button" id="add-invoice-item-btn" class="btn btn-secondary"><span class="material-symbols-outlined">add</span> Tambah Barang</button>
+                 <div class="add-item-action">
+                    <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
+                        <span class="material-symbols-outlined">add_circle</span>
+                    </button>
+                </div>
                 
                 <div class="invoice-total">
                     <span>Total Faktur:</span>
@@ -1831,8 +1950,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const itemHTML = `
             <div class="invoice-item-row" data-index="${index}">
                 <input type="text" name="itemName" placeholder="Nama Barang" class="item-name" required>
-                <input type="text" inputmode="numeric" name="itemPrice" placeholder="Harga Satuan" class="item-price" required>
-                <input type="number" name="itemQty" placeholder="Qty" class="item-qty" required>
+                <div class="item-details">
+                    <input type="text" inputmode="numeric" name="itemPrice" placeholder="Harga" class="item-price" required>
+                    <span>x</span>
+                    <input type="number" name="itemQty" placeholder="Qty" class="item-qty" value="1" required>
+                </div>
                 <span class="item-total">Rp 0</span>
                 <button type="button" class="btn-icon btn-icon-danger remove-item-btn"><span class="material-symbols-outlined">delete</span></button>
             </div>
@@ -1858,13 +1980,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const total = price * qty;
         totalEl.textContent = fmtIDR(total);
-
-        // [FIX] Penyesuaian font-size untuk total yang panjang
-        if (total >= 10000000) { // Jika 10 juta atau lebih
-            totalEl.style.fontSize = '0.8rem';
-        } else {
-            totalEl.style.fontSize = '0.9rem';
-        }
 
         _updateInvoiceTotal();
     }
@@ -1925,9 +2040,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // =======================================================
-    //         INISIALISASI & EVENT LISTENER UTAMA
+    //         [BARU] INISIALISASI & EVENT LISTENER UTAMA
     // =======================================================
     function init() {
+        // --- [BARU] Logika untuk Swipe Navigasi ---
+        let touchstartX = 0;
+        let touchendX = 0;
+        let touchstartY = 0;
+        let touchendY = 0;
+
+        function handleSwipeGesture() {
+            const deltaX = touchendX - touchstartX;
+            const deltaY = touchendY - touchstartY;
+
+            // Hanya proses swipe horizontal yang signifikan
+            if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 100) return;
+
+            const container = $('.page-container');
+            const activeSubNav = container.querySelector('.sub-nav');
+
+            if (activeSubNav) {
+                // Handle swipe untuk sub-tab
+                const tabs = $$('.sub-nav-item', activeSubNav);
+                const activeTabIndex = tabs.findIndex(tab => tab.classList.contains('active'));
+                if (activeTabIndex === -1) return;
+
+                let nextTabIndex;
+                if (touchendX < touchstartX) { // Geser ke kiri
+                    nextTabIndex = activeTabIndex + 1;
+                }
+                if (touchendX > touchstartX) { // Geser ke kanan
+                    nextTabIndex = activeTabIndex - 1;
+                }
+
+                if (nextTabIndex >= 0 && nextTabIndex < tabs.length) {
+                    tabs[nextTabIndex].click();
+                }
+            } else {
+                // Handle swipe untuk halaman utama
+                let navIdsToShow = [];
+                if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
+                else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
+                else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
+                
+                const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
+                const currentAccessibleIndex = accessibleLinks.findIndex(link => link.id === appState.activePage);
+
+                if (currentAccessibleIndex === -1) return;
+
+                let nextNavIndex;
+                if (touchendX < touchstartX) { // Geser ke kiri
+                    nextNavIndex = currentAccessibleIndex + 1;
+                }
+                if (touchendX > touchstartX) { // Geser ke kanan
+                    nextNavIndex = currentAccessibleIndex - 1;
+                }
+
+                if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) {
+                    handleNavigation(accessibleLinks[nextNavIndex].id);
+                }
+            }
+        }
+
+        document.body.addEventListener('touchstart', e => {
+            touchstartX = e.changedTouches[0].screenX;
+            touchstartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        document.body.addEventListener('touchend', e => {
+            touchendX = e.changedTouches[0].screenX;
+            touchendY = e.changedTouches[0].screenY;
+            handleSwipeGesture();
+        }, { passive: true });
+
+
+        // --- Event Listener Utama (click) ---
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
                 $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
@@ -1944,9 +2131,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (manager) type = manager.dataset.type;
 
             if (isViewer() && actionTarget.dataset.action.startsWith('manage')) return;
+            
+            let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
 
             switch (actionTarget.dataset.action) {
-                case 'navigate': handleNavigation(actionTarget.dataset.nav); break;
+                case 'navigate': handleNavigation(navTarget); break;
                 case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
                 case 'open-detail': {
                     if (!card) return;
@@ -2017,11 +2206,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                      createModal('dataDetail', {
                         title: 'Pilih Master Data',
                         content: `
-                            <div class="dashboard-nav-grid">
+                            <div class="settings-list">
                                 ${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `
-                                    <div class="nav-card" data-action="manage-master" data-type="${key}">
-                                        <div class="nav-card-icon"><span class="material-symbols-outlined">database</span></div>
-                                        <span class="nav-card-label">${config.title}</span>
+                                    <div class="settings-list-item" data-action="manage-master" data-type="${key}">
+                                        <div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div>
+                                        <span class="label">${config.title}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -2029,11 +2218,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                     break;
                 case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
-                case 'delete-master-item': if (isViewer()) return; handleDeleteItem(id, type); break;
+                case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
                 case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
                 case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
                 case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
                 case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
+                case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
                 case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
                 case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
                 case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(id); break;
@@ -2053,7 +2243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         localStorage.setItem('lastActivePage', pageId);
         renderUI();
     }
-    
+        
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK TAGIHAN
     // =======================================================
@@ -2663,6 +2853,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         resultsContainer.innerHTML = tableHTML;
     }
+    
+    async function handleDeleteRecapItem(recordIdsCSV) {
+        if (!recordIdsCSV) return;
+        createModal('confirmDeleteRecap', {
+            onConfirm: async () => {
+                toast('loading', 'Menghapus data absensi...');
+                try {
+                    const recordIds = recordIdsCSV.split(',');
+                    const batch = writeBatch(db);
+                    recordIds.forEach(id => {
+                        batch.delete(doc(attendanceRecordsCol, id));
+                    });
+                    await batch.commit();
+                    
+                    await _logActivity(`Menghapus Rekap Gaji`, { count: recordIds.length });
+                    toast('success', 'Data absensi terkait telah dihapus.');
+                    
+                    const startDate = $('#recap-start-date').value;
+                    const endDate = $('#recap-end-date').value;
+                    if (startDate && endDate) {
+                        generateSalaryRecap(new Date(startDate), new Date(endDate));
+                    }
+                } catch (error) {
+                    toast('error', 'Gagal menghapus data.');
+                    console.error("Error deleting recap items:", error);
+                }
+            }
+        });
+    }
 
     async function handleGenerateSalaryBill(dataset) {
         const { workerId, workerName, totalPay, startDate, endDate, recordIds } = dataset;
@@ -2872,45 +3091,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function handleManageUsers() {
-        await fetchData('users', membersCol, 'name');
-        const usersHTML = appState.users.map(user => {
-            const userRole = user.role || 'viewer';
-            const userStatus = user.status || 'pending';
+        toast('loading', 'Memuat data pengguna...');
+        try {
+            // [ALTERNATIF 1] Ambil pengguna 'pending' secara eksplisit
+            const pendingQuery = query(membersCol, where("status", "==", "pending"));
+            const pendingSnap = await getDocs(pendingQuery);
+            const pendingUsers = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            return `
-            <div class="master-data-item">
-                <div class="user-info-container">
-                    <strong>${user.name}</strong>
-                    <span class="user-email">${user.email}</span>
-                    <div class="user-badges">
-                        <span class="user-badge role-${userRole.toLowerCase()}">${userRole}</span>
-                        <span class="user-badge status-${userStatus.toLowerCase()}">${userStatus}</span>
+            // [ALTERNATIF 2] Ambil pengguna lainnya (yang tidak 'pending')
+            const otherUsersQuery = query(membersCol, where("status", "!=", "pending"));
+            const otherUsersSnap = await getDocs(otherUsersQuery);
+            const otherUsers = otherUsersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // [BARU] Gabungkan hasil ke dalam state global jika diperlukan
+            appState.users = [...pendingUsers, ...otherUsers];
+
+            const createUserHTML = (user) => {
+                const userRole = user.role || 'viewer';
+                const userStatus = user.status || 'pending';
+                return `
+                <div class="master-data-item">
+                    <div class="user-info-container">
+                        <strong>${user.name}</strong>
+                        <span class="user-email">${user.email}</span>
+                        <div class="user-badges">
+                            <span class="user-badge role-${userRole.toLowerCase()}">${userRole}</span>
+                            <span class="user-badge status-${userStatus.toLowerCase()}">${userStatus}</span>
+                        </div>
                     </div>
-                </div>
-                <div class="master-data-item-actions">
-                     ${user.status === 'pending' ? `
-                        <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
-                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
-                    ` : ''}
-                    ${user.status === 'active' && user.role !== 'Owner' ? `
-                        ${user.role !== 'Editor' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-editor" title="Jadikan Editor"><span class="material-symbols-outlined">edit_note</span></button>`:''}
-                        ${user.role !== 'Viewer' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-viewer" title="Jadikan Viewer"><span class="material-symbols-outlined">visibility</span></button>`:''}
-                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
-                    `: ''}
-                </div>
-            </div>
-        `}).join('');
+                    <div class="master-data-item-actions">
+                         ${user.status === 'pending' ? `
+                            <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
+                            <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
+                        ` : ''}
+                        ${user.status === 'active' && user.role !== 'Owner' ? `
+                            ${user.role !== 'Editor' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-editor" title="Jadikan Editor"><span class="material-symbols-outlined">edit_note</span></button>`:''}
+                            ${user.role !== 'Viewer' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-viewer" title="Jadikan Viewer"><span class="material-symbols-outlined">visibility</span></button>`:''}
+                            <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
+                        `: ''}
+                    </div>
+                </div>`;
+            };
+        
+            const pendingUsersHTML = pendingUsers.length > 0
+                ? `<h5 class="detail-section-title" style="margin-top: 0;">Menunggu Persetujuan</h5>${pendingUsers.map(createUserHTML).join('')}`
+                : '';
+        
+            const otherUsersSorted = otherUsers.sort((a, b) => (a.role === 'Owner' ? -1 : 1)); // Owner selalu di atas
+            const otherUsersHTML = otherUsers.length > 0
+                ? `<h5 class="detail-section-title" style="${pendingUsers.length > 0 ? '' : 'margin-top: 0;'}">Pengguna Terdaftar</h5>${otherUsersSorted.map(createUserHTML).join('')}`
+                : '';
+        
+            const noUsersHTML = appState.users.length === 0 ? '<p class="empty-state-small">Tidak ada pengguna lain.</p>' : '';
+        
+            createModal('manageUsers', {
+                title: 'Manajemen Pengguna',
+                content: `
+                    <div class="master-data-list">
+                        ${noUsersHTML}
+                        ${pendingUsersHTML}
+                        ${otherUsersHTML}
+                    </div>
+                `
+            });
+            toast('success', 'Data pengguna dimuat.');
 
-        createModal('manageUsers', {
-            title: 'Manajemen Pengguna',
-            content: `
-                <div class="master-data-list">
-                    ${appState.users.length > 0 ? usersHTML : '<p class="empty-state-small">Tidak ada pengguna lain.</p>'}
-                </div>
-            `
-        });
+        } catch (e) {
+            console.error("Gagal mengambil data pengguna:", e);
+            toast('error', 'Gagal memuat data pengguna.');
+            return;
+        }
     }
-
+    
     async function handleUserAction(dataset) {
         const { id, type } = dataset;
         const user = appState.users.find(u => u.id === id);
@@ -3278,23 +3530,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     
         const headers = ["Tanggal", "Deskripsi", "Pemasukan", "Pengeluaran", "Saldo"];
         
-        // Memproses baris dari tbody
         const data = rows.map(row => {
             const cols = row.querySelectorAll('td');
-            if (cols.length < 5) return ['', '', '', '', '']; // Safety check
-            // Menggunakan Array.from untuk mengubah NodeList menjadi array dan kemudian memetakannya
+            if (cols.length < 5) return ['', '', '', '', '']; 
             return Array.from(cols).map(col => `"${(col.textContent || '').trim()}"`);
         });
     
-        // Memproses baris dari tfoot secara terpisah
         if (foot.length > 0) {
             foot.forEach(row => {
                 const cols = row.querySelectorAll('td');
-                // Penanganan khusus untuk baris footer dengan colspan
                 if (cols.length === 4 && cols[0].getAttribute('colspan') === '2') {
                      data.push([
-                        `"${(cols[0].textContent || '').trim()}"`, // "Total"
-                        '""', // Kolom kosong untuk deskripsi
+                        `"${(cols[0].textContent || '').trim()}"`, 
+                        '""', 
                         `"${(cols[1].textContent || '').trim()}"`,
                         `"${(cols[2].textContent || '').trim()}"`,
                         `"${(cols[3].textContent || '').trim()}"`
@@ -3309,14 +3557,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (format === 'csv') {
             _downloadCSV(headers, data, filename + '.csv');
         } else { // pdf
-            // Mengubah data untuk PDF agar tidak ada tanda kutip
             const pdfData = data.map(row => row.map(cell => cell.replace(/"/g, '')));
             _downloadPDF(headers, pdfData, filename + '.pdf');
         }
     }
 
     function _downloadCSV(headers, data, filename) {
-        // Gabungkan header dan baris data, lalu gabungkan setiap baris menjadi string CSV
         const csvContent = "data:text/csv;charset=utf-8," 
             + [headers.join(","), ...data.map(e => e.join(","))].join("\n");
             
@@ -3332,7 +3578,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function _downloadPDF(headers, data, filename) {
         toast('loading', 'Membuat PDF...');
-        // Pastikan jspdf dan autoTable sudah dimuat
         if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF.autoTable === 'undefined') {
             toast('error', 'Pustaka PDF gagal dimuat. Coba muat ulang halaman.');
             console.error('jsPDF atau autoTable tidak ditemukan.');
@@ -3424,3 +3669,5 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     init();
 });
+
+
