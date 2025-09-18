@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fundingSourcesCol = collection(db, 'teams', TEAM_ID, 'funding_sources');
     const expensesCol = collection(db, 'teams', TEAM_ID, 'expenses');
     const billsCol = collection(db, 'teams', TEAM_ID, 'bills');
-    const logsCol = collection(db, 'teams', TEAM_ID, 'logs'); // [BARU] Koleksi untuk Log Aktivitas
+    const logsCol = collection(db, 'teams', TEAM_ID, 'logs');
 
     const masterDataConfig = {
         'projects': { collection: projectsCol, stateKey: 'projects', nameField: 'projectName', title: 'Proyek' },
@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // =======================================================
-    //                [BARU] LOG AKTIVITAS
+    //                LOG AKTIVITAS
     // =======================================================
     async function _logActivity(action, details = {}) {
         if (!appState.currentUser || isViewer()) return;
@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
             'laporan': renderLaporanPage,
             'absensi': renderAbsensiPage,
-            'log_aktivitas': renderLogAktivitasPage, // [BARU] Halaman Log Aktivitas
+            'log_aktivitas': renderLogAktivitasPage,
         };
         
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
@@ -378,10 +378,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =======================================================
     async function renderDashboardPage() {
         const container = $('.page-container');
-        const accessibleLinks = ALL_NAV_LINKS.filter(link => 
-            link.id !== 'dashboard' && link.roles.includes(appState.userRole)
-        );
-        container.innerHTML = `
+        container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
+
+        await Promise.all([ fetchData('projects', projectsCol), fetchData('incomes', incomesCol), fetchData('expenses', expensesCol), fetchData('bills', billsCol) ]);
+        
+        const mainProject = appState.projects.find(p => p.projectType === 'main_income');
+        const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
+        
+        const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
+        const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
+        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
+        const hpp = hpp_material + hpp_gaji;
+        const labaKotor = pendapatan - hpp;
+        const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
+        const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        const labaBersih = labaKotor - bebanOperasional - bebanInternal;
+
+        const unpaidBills = appState.bills.filter(b => b.status === 'unpaid');
+        const totalUnpaid = unpaidBills.reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
+
+        const projectOverBudget = appState.projects.filter(p => {
+            if (!p.budget || p.budget === 0) return false;
+            const actual = appState.expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
+            return actual > p.budget;
+        });
+
+        const statusCardsHTML = `
+            <div class="status-card-grid">
+                <div class="status-card"><span class="label">Laba Bersih</span><strong class="positive">${fmtIDR(labaBersih)}</strong></div>
+                <div class="status-card"><span class="label">Total Tagihan</span><strong class="negative">${fmtIDR(totalUnpaid)}</strong></div>
+            </div>
+        `;
+        
+        const alertsHTML = `
+            ${(unpaidBills.length > 0 || projectOverBudget.length > 0) ? `<h5 class="section-title-owner">Peringatan Penting</h5>` : ''}
+            <div class="alert-container">
+                ${unpaidBills.length > 0 ? `<div class="alert warn" data-action="navigate" data-nav="tagihan"><span class="material-symbols-outlined">error</span> Terdapat <strong>${unpaidBills.length} tagihan</strong> belum lunas.</div>` : ''}
+                ${projectOverBudget.map(p => `<div class="alert danger" data-action="navigate" data-nav="laporan"><span class="material-symbols-outlined">warning</span> Proyek <strong>${p.projectName}</strong> melebihi anggaran.</div>`).join('')}
+            </div>
+        `;
+        
+        const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
+        const quickActionsHTML = `
+            <h5 class="section-title-owner">Aksi Cepat</h5>
             <div class="dashboard-nav-grid">
                 ${accessibleLinks.map(link => `
                     <div class="nav-card" data-action="navigate" data-nav="${link.id}">
@@ -389,8 +428,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <span class="nav-card-label">${link.label}</span>
                     </div>
                 `).join('')}
-            </div>
-        `;
+            </div>`;
+
+        container.innerHTML = statusCardsHTML + alertsHTML + quickActionsHTML;
     }
 
     async function renderPengaturanPage() {
@@ -1316,16 +1356,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         toast('loading', `Menambah ${config.title}...`);
         try {
+            const newDocRef = doc(config.collection); // [FIX] Generate ref before transaction
             if (type === 'projects' && dataToAdd.projectType === 'main_income') {
                 await runTransaction(db, async (transaction) => {
                     const q = query(projectsCol, where("projectType", "==", "main_income"));
-                    const mainProjectsSnap = await transaction.get(q);
+                    const mainProjectsSnap = await getDocs(q); // Use getDocs, not transaction.get
                     mainProjectsSnap.forEach(doc => transaction.update(doc.ref, { projectType: 'internal_expense' }));
-                    const newProjectRef = doc(config.collection);
-                    transaction.set(newProjectRef, dataToAdd);
+                    transaction.set(newDocRef, dataToAdd);
                 });
             } else {
-                await addDoc(config.collection, dataToAdd);
+                await setDoc(newDocRef, dataToAdd);
             }
 
             await _logActivity(`Menambah Master Data: ${config.title}`, { name: itemName });
@@ -1438,7 +1478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (type === 'projects' && dataToUpdate.projectType === 'main_income') {
                 await runTransaction(db, async (transaction) => {
                     const q = query(projectsCol, where("projectType", "==", "main_income"));
-                    const mainProjectsSnap = await transaction.get(q);
+                    const mainProjectsSnap = await getDocs(q); // Use getDocs
                     mainProjectsSnap.forEach(docSnap => {
                         if (docSnap.id !== id) transaction.update(docSnap.ref, { projectType: 'internal_expense' });
                     });
@@ -1818,6 +1858,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const total = price * qty;
         totalEl.textContent = fmtIDR(total);
+
+        // [FIX] Penyesuaian font-size untuk total yang panjang
+        if (total >= 10000000) { // Jika 10 juta atau lebih
+            totalEl.style.fontSize = '0.8rem';
+        } else {
+            totalEl.style.fontSize = '0.9rem';
+        }
+
         _updateInvoiceTotal();
     }
 
@@ -2585,7 +2633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <tr>
                                     <td>${worker.workerName}</td>
                                     <td><strong>${fmtIDR(worker.totalPay)}</strong></td>
-                                    ${isViewer() ? '' : `<td>
+                                    ${isViewer() ? '' : `<td class="recap-actions-cell">
                                         <button class="btn-icon" 
                                                 title="Buat Tagihan"
                                                 data-action="generate-salary-bill" 
@@ -2597,6 +2645,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 data-record-ids="${worker.recordIds.join(',')}"
                                                 >
                                             <span class="material-symbols-outlined">request_quote</span>
+                                        </button>
+                                        <button class="btn-icon btn-icon-danger" 
+                                                title="Hapus Rekap"
+                                                data-action="delete-recap-item"
+                                                data-record-ids="${worker.recordIds.join(',')}"
+                                                >
+                                            <span class="material-symbols-outlined">delete</span>
                                         </button>
                                     </td>`}
                                 </tr>
@@ -2938,7 +2993,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await _logActivity(`Menghapus Lampiran`, { expenseId: id, field });
                     
                     toast('success', 'Lampiran berhasil dihapus.');
-                    closeModal($('#dataDetail-modal')); // Close the current detail view
+                    closeModal($('#dataDetail-modal'));
                 } catch(error) {
                     toast('error', 'Gagal menghapus lampiran.');
                     console.error("Attachment deletion error:", error);

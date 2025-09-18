@@ -111,6 +111,17 @@ body {
 .section-title-owner { font-size: 1rem; font-weight: 600; color: var(--text-dim); margin: 2rem 0 1rem 0; text-transform: uppercase; letter-spacing: .05em; }
 .profile-role-badge { margin-top: 0.75rem; background-color: var(--info); color: #fff; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
 
+.status-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing); margin-bottom: 1.5rem; }
+.status-card { background-color: var(--panel); padding: 1rem; border-radius: var(--radius); text-align: center; }
+.status-card .label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+.status-card strong { font-size: 1.5rem; font-weight: 700; }
+.status-card strong.positive { color: var(--success); }
+.status-card strong.negative { color: var(--danger); }
+.alert-container { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
+.alert { padding: .75rem 1rem; border-radius: var(--radius-sm); display: flex; align-items: center; gap: .75rem; font-weight: 500; border: 1px solid transparent; cursor: pointer; }
+.alert.warn { background-color: color-mix(in srgb, var(--warn) 15%, transparent); border-color: var(--warn); color: var(--warn); }
+.alert.danger { background-color: color-mix(in srgb, var(--danger) 15%, transparent); border-color: var(--danger); color: var(--danger); }
+
 /* =======================================================
  * NAVIGASI TAB SWIPEABLE
  * ======================================================= */
@@ -328,6 +339,10 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .recap-table tr:last-child td { border-bottom: none; }
 .recap-table strong { color: var(--info); }
 .btn-sm { padding: .3rem .8rem; font-size: .8rem; border-radius: var(--radius-sm); }
+.recap-actions-cell {
+    display: flex;
+    gap: 0.5rem;
+}
 
 .manual-attendance-item {
     padding: 0.75rem 1rem;
@@ -361,7 +376,19 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .attendance-status-selector input[type="radio"]:checked + span { color: var(--info); font-weight: 600; }
 .attendance-status-selector label:has(input:checked) { background-color: color-mix(in srgb, var(--info) 10%, transparent); border-color: var(--info); }
 
-.form-footer-actions { margin-top: 1.5rem; position: sticky; bottom: 0; background: var(--panel); padding: 1rem var(--spacing); border-top: 1px solid var(--line); margin: 1.5rem calc(-1 * var(--spacing)) calc(-1 * var(--spacing)); border-radius: 16px 16px 0 0; box-shadow: var(--shadow-lg); }
+.form-footer-actions {
+    margin-top: 1.5rem;
+    position: sticky;
+    bottom: 0;
+    background: var(--panel);
+    padding: 1rem var(--spacing);
+    border-top: 1px solid var(--line);
+    margin: 1.5rem calc(-1 * var(--spacing)) calc(-1 * var(--spacing));
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    justify-content: center;
+}
 
 .log-container { display: flex; flex-direction: column; gap: .75rem; }
 .log-item { background-color: var(--panel); padding: .75rem 1rem; border-radius: var(--radius-sm); border-left: 4px solid var(--info); }
@@ -369,6 +396,4 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .log-user { font-weight: 600; }
 .log-time { font-size: .8rem; color: var(--text-dim); }
 .log-action { margin: 0; }
-" in the document "Gaya Aplikasi (Lengkap)". The selection I've made includes the whole document.
-I will edit the code within the selection to add the requested features and improvements.
 
