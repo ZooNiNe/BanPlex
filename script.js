@@ -137,6 +137,16 @@ async function main() {
     const fmtIDR = (n) => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(Number(n||0));
     const parseFormattedNumber = (str) => Number(String(str).replace(/[^0-9]/g, ''));
     const isViewer = () => appState.userRole === 'Viewer';
+
+    const _loadScript = (url) => new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${url}"]`);
+        if (existing) return resolve();
+        const script = document.createElement('script');
+        script.src = url;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+        document.head.appendChild(script);
+    });
     
     // Form draft persistence (to avoid losing inputs when opening modals or navigating)
     function _getFormDraftKey(form) {
@@ -4078,11 +4088,19 @@ async function renderTagihanPage() {
     // =======================================================
     async function renderLaporanPage() {
         const container = $('.page-container');
-        if (typeof Chart === 'undefined') {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
-            document.head.appendChild(script);
-            await new Promise(resolve => script.onload = resolve);
+        try {
+            if (typeof Chart === 'undefined') {
+                await _loadScript('https://cdn.jsdelivr.net/npm/chart.js');
+            }
+            if (typeof jspdf === 'undefined') {
+                await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+            }
+            if (window.jspdf && typeof window.jspdf.jsPDF.autoTable === 'undefined') {
+                await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+            }
+        } catch (error) {
+            console.error("Failed to load reporting libraries:", error);
+            toast('error', 'Gagal memuat pustaka laporan. Fitur unduh mungkin tidak berfungsi.');
         }
     
         const tabs = [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}, {id:'anggaran', label:'Anggaran'}, {id:'rekapan', label:'Rekapan'}];
