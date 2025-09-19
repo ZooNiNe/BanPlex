@@ -1,12 +1,13 @@
 const CACHE_NAME = 'banplex-cache-v13'; // Versi cache dinaikkan untuk memicu update
+// [DIUBAH] Menggunakan jalur relatif untuk semua aset lokal
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.json',
-  '/logo-main.png',
-  '/icons-logo.png',
+  './',
+  './index.html',
+  './style.css',
+  './script.js',
+  './manifest.json',
+  './logo-main.png',
+  './icons-logo.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
   'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200'
 ];
