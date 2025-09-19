@@ -10,7 +10,7 @@ import {
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
     query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, 
     enableIndexedDbPersistence,
-    enableNetwork, disableNetwork,
+    enableNetwork, disableNetwork
 
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isViewer = () => appState.userRole === 'Viewer';
     let pendingUsersUnsub = null;
+    let popupTimeout;
 
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(1).stores({
@@ -119,17 +120,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    let popupTimeout;
     function toast(kind, text, duration = 3200) {
         clearTimeout(popupTimeout);
-        const p = $('#popup-container'); if(!p) return;
-        p.className = `popup-container show popup-${kind}`;
-        const iconEl = $('#popup-icon');
-        if(iconEl) iconEl.className = kind === 'loading' ? 'spinner' : 'material-symbols-outlined';
-        $('#popup-message').textContent = text || '';
-        if(kind !== 'loading'){ popupTimeout = setTimeout(() => p.classList.remove('show'), duration); }
+        const p = document.querySelector('#popup-container');
+        if (!p) return;
+    
+        if (kind === 'loading' || kind === 'offline' || kind === 'syncing') {
+            p.className = `popup-container show popup-${kind}`;
+            p.querySelector('#popup-message').textContent = text || '';
+            const iconEl = p.querySelector('#popup-icon');
+            iconEl.className = 'spinner';
+            const iconTextEl = p.querySelector('#popup-icon-text');
+            if(iconTextEl) iconTextEl.textContent = '';
+        } else {
+            p.className = `popup-container show popup-${kind}`;
+            const iconEl = p.querySelector('#popup-icon');
+            const iconTextEl = p.querySelector('#popup-icon-text');
+            iconEl.className = 'material-symbols-outlined';
+            if(iconTextEl) iconTextEl.textContent = (kind === 'success' ? 'check_circle' : (kind === 'error' ? 'error' : 'info'));
+            p.querySelector('#popup-message').textContent = text || '';
+            popupTimeout = setTimeout(() => p.classList.remove('show'), duration);
+        }
     }
-
+    
+    // BARU: Fungsi untuk menyembunyikan toast secara manual (penting untuk notif offline)
+    function hideToast() {
+        const p = document.querySelector('#popup-container');
+        if (!p) return;
+        p.classList.remove('show');
+    }
+    
     function createModal(type, data = {}) {
         const modalContainer = $('#modal-container');
         if (!modalContainer) return;
@@ -145,6 +165,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         attachModalEventListeners(type, data, closeModalFunc);
     }    
     function getModalContent(type, data) {
+        if (type === 'imageView') {
+            return `<div class="image-view-modal" data-close-modal>
+                        <img src="${data.src}" alt="Lampiran">
+                        <button class="btn-icon image-view-close" data-close-modal>
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>`;
+        }        
         const modalWithHeader = (title, content) => `<div class="modal-content"><div class="modal-header"><h4>${title}</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body">${content}</div></div>`;
         const simpleModal = (title, content, footer) => `<div class="modal-content" style="max-width:400px"><div class="modal-header"><h4>${title}</h4></div><div class="modal-body">${content}</div><div class="modal-footer">${footer}</div></div>`;
 
@@ -162,6 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-btn" class="btn ${confirmClasses[type]}">${confirmTexts[type]}</button>`
             );
         }
+        
         if (type === 'confirmExpense') {
             return simpleModal(
                 'Konfirmasi Status Pengeluaran',
@@ -183,27 +212,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         return `<div>Konten tidak ditemukan</div>`;
     }
-    function attachModalEventListeners(type, data, closeModalFunc) {
-        if (type === 'login') $('#google-login-btn')?.addEventListener('click', signInWithGoogle);
-        if (type === 'confirmLogout') $('#confirm-logout-btn')?.addEventListener('click', handleLogout);
-        if (type.startsWith('confirm') && type !== 'confirmExpense') $('#confirm-btn')?.addEventListener('click', () => { data.onConfirm(); closeModalFunc(); });
+function attachModalEventListeners(type, data, closeModalFunc) {
+        if (type === 'login') {
+            const googleLoginBtn = $('#google-login-btn');
+            if (googleLoginBtn) googleLoginBtn.addEventListener('click', signInWithGoogle);
+        }
+        if (type === 'confirmLogout') {
+            const logoutBtn = $('#confirm-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+        }
+        if (type.startsWith('confirm') && type !== 'confirmExpense') {
+            const confirmBtn = $('#confirm-btn');
+            if (confirmBtn) confirmBtn.addEventListener('click', () => { data.onConfirm(); closeModalFunc(); });
+        }
         
         if (type === 'confirmExpense') {
-            $('#confirm-paid-btn')?.addEventListener('click', () => { data.onConfirm('paid'); closeModalFunc(); });
-            $('#confirm-bill-btn')?.addEventListener('click', () => { data.onConfirm('unpaid'); closeModalFunc(); });
+            const paidBtn = $('#confirm-paid-btn');
+            if (paidBtn) paidBtn.addEventListener('click', () => { data.onConfirm('paid'); closeModalFunc(); });
+            const billBtn = $('#confirm-bill-btn');
+            if (billBtn) billBtn.addEventListener('click', () => { data.onConfirm('unpaid'); closeModalFunc(); });
         }
         if (type === 'payment') {
             const paymentForm = $('#payment-form');
-            paymentForm?.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const amount = fmtIDR(parseFormattedNumber(paymentForm.elements.amount.value));
-                const onConfirm = () => {
-                    if (data.paymentType === 'bill') handleProcessBillPayment(e.target);
-                    else handleProcessPayment(e.target);
-                };
-                createModal('confirmPayBill', { message: `Anda akan membayar sebesar ${amount}. Lanjutkan?`, onConfirm });
-            });
-            paymentForm.querySelectorAll('input[inputmode="numeric"]').forEach(input => input.addEventListener('input', _formatNumberInput));
+            if (paymentForm) {
+                paymentForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const amount = fmtIDR(parseFormattedNumber(paymentForm.elements.amount.value));
+                    const onConfirm = () => {
+                        if (data.paymentType === 'bill') handleProcessBillPayment(e.target);
+                        else handleProcessPayment(e.target);
+                    };
+                    createModal('confirmPayBill', { message: `Anda akan membayar sebesar ${amount}. Lanjutkan?`, onConfirm });
+                });
+                paymentForm.querySelectorAll('input[inputmode="numeric"]').forEach(input => input.addEventListener('input', _formatNumberInput));
+            }
         }
         if (type === 'actionsMenu') {
             $$('.actions-menu-item').forEach(btn => btn.addEventListener('click', () => closeModalFunc()));
@@ -470,12 +512,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function renderDashboardPage() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
-
-        await Promise.all([ fetchData('projects', projectsCol), fetchData('incomes', incomesCol), fetchData('expenses', expensesCol), fetchData('bills', billsCol) ]);
+    
+        // 1. Fetch data
+        await Promise.all([
+            fetchData('projects', projectsCol, 'projectName'), 
+            fetchData('incomes', incomesCol), 
+            fetchData('expenses', expensesCol), 
+            fetchData('bills', billsCol)
+        ]);
         
+        // 2. Lakukan Kalkulasi
+        // Kalkulasi Laba & Tagihan
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
         const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
-        
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
         const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
         const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
@@ -484,37 +533,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
         const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
         const labaBersih = labaKotor - bebanOperasional - bebanInternal;
-
-        const unpaidBills = appState.bills.filter(b => b.status === 'unpaid');
-        const totalUnpaid = unpaidBills.reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
-
-        const projectOverBudget = appState.projects.filter(p => {
-            if (!p.budget || p.budget === 0) return false;
+        const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
+    
+        // Kalkulasi Anggaran Proyek
+        const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
             const actual = appState.expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
-            return actual > p.budget;
+            const remaining = p.budget - actual;
+            const percentage = p.budget > 0 ? (actual / p.budget) * 100 : 0;
+            return { ...p, actual, remaining, percentage };
         });
-
-        const statusCardsHTML = `
-            <div class="status-card-grid">
-                <div class="status-card">
-                    <span class="label">Laba Bersih</span>
-                    <strong class="positive ${fmtIDR(labaBersih).length > 15 ? 'small-value' : ''}">${fmtIDR(labaBersih)}</strong>
+    
+        // Kalkulasi Rekap Harian
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todaysExpenses = appState.expenses.filter(e => e.date.toDate() >= today);
+        const dailyRecap = todaysExpenses.reduce((recap, expense) => {
+            const projectName = appState.projects.find(p => p.id === expense.projectId)?.projectName || 'Lainnya';
+            if (!recap[projectName]) recap[projectName] = 0;
+            recap[projectName] += expense.amount;
+            return recap;
+        }, {});
+    
+        // 3. Buat Komponen HTML
+        // Kartu Saldo Utama
+        const balanceCardsHTML = `
+            <div class="dashboard-balance-grid">
+                <div class="dashboard-balance-card">
+                    <span class="label">Estimasi Laba Bersih</span>
+                    <strong class="value positive">${fmtIDR(labaBersih)}</strong>
                 </div>
-                <div class="status-card">
-                    <span class="label">Total Tagihan</span>
-                    <strong class="negative ${fmtIDR(totalUnpaid).length > 15 ? 'small-value' : ''}">${fmtIDR(totalUnpaid)}</strong>
+                <div class="dashboard-balance-card">
+                    <span class="label">Tagihan Belum Lunas</span>
+                    <strong class="value negative">${fmtIDR(totalUnpaid)}</strong>
                 </div>
-            </div>
-        `;
-        
-        const alertsHTML = `
-            ${(unpaidBills.length > 0 || projectOverBudget.length > 0) ? `<h5 class="section-title-owner">Peringatan Penting</h5>` : ''}
-            <div class="alert-container">
-                ${unpaidBills.length > 0 ? `<div class="alert warn" data-action="navigate" data-nav="tagihan"><span class="material-symbols-outlined">error</span> Terdapat <strong>${unpaidBills.length} tagihan</strong> belum lunas.</div>` : ''}
-                ${projectOverBudget.map(p => `<div class="alert danger" data-action="navigate" data-nav="laporan"><span class="material-symbols-outlined">warning</span> Proyek <strong>${p.projectName}</strong> melebihi anggaran.</div>`).join('')}
-            </div>
-        `;
-        
+            </div>`;
+    
+        // Kartu Anggaran Proyek
+        const projectBudgetHTML = `
+            <h5 class="section-title-owner">Sisa Anggaran Proyek</h5>
+            <div class="card card-pad">
+                ${projectsWithBudget.length > 0 ? projectsWithBudget.map(p => `
+                    <div class="budget-item">
+                        <div class="budget-info">
+                            <span class="project-name">${p.projectName}</span>
+                            <strong class="remaining-amount ${p.remaining < 0 ? 'negative' : ''}">${fmtIDR(p.remaining)}</strong>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${Math.min(p.percentage, 100)}%; background-color: ${p.percentage > 100 ? 'var(--danger)' : 'var(--info)'};"></div>
+                        </div>
+                        <div class="budget-details">
+                            <span>Terpakai: ${fmtIDR(p.actual)}</span>
+                            <span>Anggaran: ${fmtIDR(p.budget)}</span>
+                        </div>
+                    </div>
+                `).join('') : '<p class="empty-state-small">Tidak ada proyek dengan anggaran.</p>'}
+            </div>`;
+    
+        // Kartu Rekap Harian
+        const dailyRecapHTML = `
+             <h5 class="section-title-owner">Rekap Pengeluaran Hari Ini</h5>
+             <div class="card card-pad">
+                ${Object.keys(dailyRecap).length > 0 ? Object.entries(dailyRecap).map(([projectName, total]) => `
+                    <div class="daily-recap-item">
+                        <span>${projectName}</span>
+                        <strong>${fmtIDR(total)}</strong>
+                    </div>
+                `).join('') : '<p class="empty-state-small">Tidak ada pengeluaran hari ini.</p>'}
+             </div>`;
+    
+        // Tombol Aksi Cepat
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
         const quickActionsHTML = `
             <h5 class="section-title-owner">Aksi Cepat</h5>
@@ -526,8 +613,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </button>
                 `).join('')}
             </div>`;
-
-        container.innerHTML = statusCardsHTML + alertsHTML + quickActionsHTML;
+    
+        // 4. Gabungkan dan Render
+        container.innerHTML = balanceCardsHTML + projectBudgetHTML + dailyRecapHTML + quickActionsHTML;
     }
 
     async function renderPengaturanPage() {
@@ -1306,7 +1394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="card-list-item-content" data-action="open-bill-detail">
                             <div class="card-list-item-details">
                                 <h5 class="card-list-item-title">${item.description}</h5>
-                                <p class="card-list-item-subtitle">${getTitle(item)} • ${item.date.toDate().toLocaleDateString('id-ID')}</p>
+                                <p class="card-list-item-subtitle">${getTitle(item)} · ${item.date.toDate().toLocaleDateString('id-ID')}</p>
                             </div>
                             <div class="card-list-item-amount-wrapper">
                                 <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
@@ -2135,6 +2223,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
 
             switch (actionTarget.dataset.action) {
+                case 'view-attachment':
+                    createModal('imageView', { src: actionTarget.dataset.src });
+                    break;
+                case 'delete-attachment':
+                    // NOTE: `isViewer()` adalah fungsi helper dari file lengkap Anda
+                    if(isViewer()) return;
+                    handleDeleteAttachment(actionTarget.dataset);
+                    break;
+            
                 case 'navigate': handleNavigation(navTarget); break;
                 case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
                 case 'open-detail': {
@@ -2233,9 +2330,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        window.addEventListener('online', () => { appState.isOnline = true; toast('success', 'Kembali online. Menyinkronkan data...'); syncOfflineData(); });
-        window.addEventListener('offline', () => { appState.isOnline = false; toast('warn', 'Anda sekarang offline. Perubahan akan disimpan secara lokal.'); });
+    window.addEventListener('online', () => {
+        appState.isOnline = true; // Pastikan appState diupdate
+        hideToast(); // Sembunyikan notif offline
+        toast('syncing', 'Kembali online, menyinkronkan data...');
+        syncOfflineData(); // Panggil fungsi sinkronisasi Anda
+    });
+    window.addEventListener('offline', () => {
+        appState.isOnline = false; // Pastikan appState diupdate
+        toast('offline', 'Anda sedang offline');
+    });
+
+    // BARU: Cek status koneksi saat aplikasi pertama kali dimuat
+    if (!navigator.onLine) {
+        toast('offline', 'Anda sedang offline');
     }
+}
+
 
     function handleNavigation(pageId) {
         if (!pageId || appState.activePage === pageId) return;
@@ -2302,23 +2413,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ${expenseData.items.map(item => `
                     <div>
                         <dt>${item.name} (${item.qty}x)</dt>
-                        <dd>${fmtIDR(item.total)}</dd>
+                        <dd>${new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(item.total)}</dd>
                     </div>
                 `).join('')}
                 </dl>
             `;
         }
-
+    
+        // BARU: Logika untuk membuat galeri lampiran dengan tombol lihat dan hapus
         let attachmentsHTML = '';
         if (expenseData.invoiceUrl || expenseData.deliveryOrderUrl) {
             const createAttachmentItem = (url, label, field) => {
-                if(!url) return '';
+                if (!url) return '';
                 return `
                 <div class="attachment-item">
-                    <a href="${url}" target="_blank"><img src="${url}" alt="${label}" class="attachment-thumbnail"></a>
+                    <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
                     <span>${label}</span>
                     <div class="attachment-actions">
-                        <a href="${url}" download class="btn-icon" title="Unduh"><span class="material-symbols-outlined">download</span></a>
                         ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${expenseData.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
                     </div>
                 </div>`;
@@ -2344,7 +2455,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${attachmentsHTML}
         `;
     }
-
+    
+    // BARU: Fungsi untuk menangani penghapusan lampiran
+    async function handleDeleteAttachment(dataset) {
+        const { id, field } = dataset;
+        const expense = appState.expenses.find(e => e.id === id);
+        if (!expense || !expense[field]) {
+            toast('error', 'Lampiran tidak ditemukan.');
+            return;
+        }
+    
+        createModal('confirmDeleteAttachment', {
+            onConfirm: async () => {
+                toast('loading', 'Menghapus lampiran...');
+                try {
+                    const fileRef = ref(storage, expense[field]);
+                    await deleteObject(fileRef);
+                    
+                    const expenseRef = doc(expensesCol, id);
+                    await updateDoc(expenseRef, { [field]: '' });
+                    
+                    await _logActivity(`Menghapus Lampiran`, { expenseId: id, field });
+                    
+                    toast('success', 'Lampiran berhasil dihapus.');
+                    closeModal(document.querySelector('#dataDetail-modal'));
+                    renderPageContent(); // Render ulang halaman untuk menampilkan perubahan
+                } catch(error) {
+                    toast('error', 'Gagal menghapus lampiran.');
+                    console.error("Attachment deletion error:", error);
+                }
+            }
+        });
+    }
+    
     function handlePayBillModal(billId) {
         const bill = appState.bills.find(i => i.id === billId);
         if (!bill) { toast('error', 'Data tagihan tidak ditemukan.'); return; }
@@ -3665,9 +3808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         toast('success', 'Sinkronisasi selesai.');
         renderPageContent();
     }
-
-
+    
+    // Pindahkan pemanggilan init() ke dalam listener
     init();
 });
-
-
