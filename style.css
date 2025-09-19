@@ -328,35 +328,50 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .modal-body { padding: 1rem; overflow-y: auto; }
 .modal-footer { padding: .8rem 1rem; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: .5rem; }
 
-.popup-container { top: -100px; left: 50%; transform: translateX(-50%); width: auto; max-width: calc(100% - 1.5rem); z-index: 2000; position: fixed; pointer-events: none; transition: top 0.4s, opacity 0.4s; opacity: 0; }
-.popup-container.show { top: .8rem; opacity: 1; }
-.popup-content { 
-  padding: 0.7rem 1rem; 
-  font-size: 0.8rem; 
+/* [DIUBAH] Toast/Popup yang lebih modern, ditempatkan di atas */
+.popup-container {
+  position: fixed;
+  top: -100px; /* Mulai dari atas, di luar layar */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: none;
+  width: auto;
+  max-width: calc(100% - 2rem);
+}
+.popup-container.show {
+  top: 1rem; /* Posisi akhir di bawah header */
+}
+.popup-content {
+  padding: 0.7rem 1.25rem;
+  font-size: 0.9rem;
   font-weight: 500;
-  display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius); color: #fff; background-color: #334155; box-shadow: var(--shadow-lg); pointer-events: auto; 
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 999px; /* Bentuk pil */
+  color: #fff;
+  background-color: #334155; /* Default */
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
   white-space: nowrap;
 }
-.popup-content .material-symbols-outlined { font-size: 1rem; }
+.popup-content .material-symbols-outlined { font-size: 1.25rem; }
+.popup-content .spinner { width: 1.25rem; height: 1.25rem; border-width: 2px; }
+.popup-content p { margin: 0; color: #fff; }
+
+/* Status colors */
+.popup-container.popup-offline .popup-content,
+.popup-container.popup-info .popup-content { background-color: var(--text-dim); }
+.popup-container.popup-online .popup-content,
 .popup-container.popup-success .popup-content { background-color: var(--success); }
+.popup-container.popup-syncing .popup-content { background-color: var(--primary); }
 .popup-container.popup-error .popup-content { background-color: var(--danger); }
-.popup-container.popup-warn .popup-content { background-color: var(--warn); color: var(--text); }
-.popup-container.popup-info .popup-content { background-color: #3b82f6; }
-.popup-container.popup-loading .popup-content {
-  background-color: transparent;
-  box-shadow: none;
-  color: var(--primary); 
-}
-.popup-loading .spinner {
-  width: 2.5em;
-  height: 2.5em;
-  border-width: 3px;
-  border-color: rgba(0,0,0,0.2);
-  border-top-color: var(--primary);
-}
-.popup-loading #popup-message {
-    display: none; 
-}
+.popup-container.popup-warn .popup-content { background-color: var(--warn); }
+.popup-container.popup-warn .popup-content p,
+.popup-container.popup-warn .popup-content .material-symbols-outlined { color: var(--text); }
+
 
 .spinner { width: 1em; height: 1em; border: 2px solid rgba(255, 255, 255, .3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -533,9 +548,6 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
     .modal-content { width: 100%; max-width: 500px; max-height: 90vh; border-radius: var(--radius-lg); transform: scale(.95); }
     .modal-bg.show .modal-content { transform: scale(1); }
 }
-
-.popup-content p { color: #fff; margin: 0; }
-.popup-warn .popup-content p, .popup-warn .spinner { color: var(--text); border-color: rgba(0,0,0,0.2); border-top-color: var(--text); }
 
 .payment-summary { margin-bottom: 1.25rem; padding: .5rem 1rem; background-color: var(--surface-muted); border-radius: var(--radius-sm); }
 .payment-summary div { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--line); }
@@ -718,5 +730,4 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .sub-nav-item:hover { color: var(--text); }
 .btn-icon:hover { background-color: var(--surface-muted); color: var(--text); }
-"
 

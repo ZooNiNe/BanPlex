@@ -1,7 +1,4 @@
-// Nama cache yang unik untuk versi aplikasi Anda
-const CACHE_NAME = 'banplex-cache-v11';
-
-// Daftar file inti yang diperlukan agar aplikasi dapat berjalan
+const CACHE_NAME = 'banplex-cache-v13'; // Versi cache dinaikkan untuk memicu update
 const urlsToCache = [
   '/',
   '/index.html',
@@ -14,63 +11,55 @@ const urlsToCache = [
   'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200'
 ];
 
-// Event 'install': Menyimpan semua file penting dan langsung aktifkan service worker baru
+// Event 'install': Menyimpan aset inti ke cache
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Cache berhasil dibuka. Menyimpan aset...');
+        console.log('Opened cache and caching assets');
         return cache.addAll(urlsToCache);
-      })
-      .then(() => {
-        // [BARU] Memaksa service worker baru untuk aktif segera
-        return self.skipWaiting();
       })
   );
 });
 
-// Event 'activate': Membersihkan cache lama agar aplikasi selalu menggunakan versi terbaru
+// [DIUBAH] Event 'activate': Membersihkan cache lama dan mengambil alih kontrol
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Service Worker: Menghapus cache lama', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
+        cacheNames.filter(cacheName => cacheName !== CACHE_NAME)
+          .map(cacheName => caches.delete(cacheName))
+      ).then(() => self.clients.claim());
     })
   );
 });
 
-// Event 'fetch': Mengambil file dari cache jika offline (Cache First Strategy)
+// [DIUBAH] Event 'fetch': Menerapkan strategi "Stale-While-Revalidate" untuk pengalaman offline yang cepat
 self.addEventListener('fetch', event => {
-  // Hanya proses permintaan GET, abaikan yang lain (misal: POST ke Firestore)
-  if (event.request.method !== 'GET') {
+  // Abaikan request non-GET dan request ke Firebase
+  if (event.request.method !== 'GET' || event.request.url.includes('firestore.googleapis.com')) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request)
-      .then(cachedResponse => {
-        // Jika file ada di cache, langsung kembalikan dari cache
-        if (cachedResponse) {
-          return cachedResponse;
-        }
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.match(event.request).then(cachedResponse => {
+        const fetchPromise = fetch(event.request).then(networkResponse => {
+          // Jika berhasil dari jaringan, update cache
+          cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        });
 
-        // Jika tidak ada di cache, coba ambil dari jaringan
-        return fetch(event.request).then(
-          response => {
-            // Jika berhasil, simpan ke cache untuk penggunaan selanjutnya dan kembalikan
-            return caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, response.clone());
-              return response;
-            });
-          }
-        );
-      })
+        // Kembalikan dari cache jika ada, sambil tetap mengambil versi baru dari jaringan
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
 
+// [BARU] Menerima pesan dari client untuk mengaktifkan service worker baru
+self.addEventListener('message', event => {
+  if (event.data && event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
+});

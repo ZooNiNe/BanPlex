@@ -9,9 +9,7 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signO
 import { 
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
     query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, 
-    enableIndexedDbPersistence,
-    enableNetwork, disableNetwork
-
+    enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
@@ -40,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         activePage: localStorage.getItem('lastActivePage') || 'dashboard',
         activeSubPage: new Map(),
         isOnline: navigator.onLine,
+        isSyncing: false,
         projects: [], clients: [], fundingCreditors: [], operationalCategories: [],
         materialCategories: [], otherCategories: [], suppliers: [], workers: [],
         professions: [], incomes: [], fundingSources: [], expenses: [], bills: [],
@@ -61,21 +60,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-
-    const isViewer = () => appState.userRole === 'Viewer';
-    let pendingUsersUnsub = null;
-    let popupTimeout;
-
     const offlineDB = new Dexie('BanPlexOfflineDB');
-    offlineDB.version(1).stores({
+    offlineDB.version(2).stores({ // Versi ditingkatkan untuk mendukung file
         offlineQueue: '++id, type, payload',
         offlineFiles: '++id, parentId, field, file'
     });
     
+    // =======================================================
+    //                FUNGSI UTILITAS
+    // =======================================================
     const $ = (s, context = document) => context.querySelector(s);
     const $$ = (s, context = document) => Array.from(context.querySelectorAll(s));
     const fmtIDR = (n) => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(Number(n||0));
     const parseFormattedNumber = (str) => Number(String(str).replace(/[^0-9]/g, ''));
+    const isViewer = () => appState.userRole === 'Viewer';
+    let popupTimeout;
+    
+    // [REVISI] Fungsi Toast yang lebih canggih dan tidak mengganggu
+    let toastTimeout;
+    function toast(type, message, duration = 3000) {
+        clearTimeout(toastTimeout);
+        const container = $('#popup-container');
+        const content = container.querySelector('.popup-content');
+        if (!content) { 
+            container.innerHTML = `<div class="popup-content"><span id="popup-icon"></span><p id="popup-message"></p></div>`;
+        }
+        const iconEl = $('#popup-icon');
+        const msgEl = $('#popup-message');
+
+        const icons = { success: 'check_circle', error: 'error', info: 'info' };
+        
+        container.className = `popup-container popup-${type}`;
+        msgEl.textContent = message;
+
+        if (['offline', 'online', 'syncing'].includes(type)) {
+            iconEl.className = 'spinner';
+            container.classList.add('show');
+        } else {
+            iconEl.className = 'material-symbols-outlined';
+            iconEl.textContent = icons[type] || 'info';
+            container.classList.add('show');
+            toastTimeout = setTimeout(() => container.classList.remove('show'), duration);
+        }
+    }
+    const hideToast = () => $('#popup-container').classList.remove('show');
+
     
     const membersCol = collection(db, 'teams', TEAM_ID, 'members');
     const projectsCol = collection(db, 'teams', TEAM_ID, 'projects');
@@ -118,36 +147,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             console.error("Gagal mencatat aktivitas:", error);
         }
-    }
-
-    function toast(kind, text, duration = 3200) {
-        clearTimeout(popupTimeout);
-        const p = document.querySelector('#popup-container');
-        if (!p) return;
-    
-        if (kind === 'loading' || kind === 'offline' || kind === 'syncing') {
-            p.className = `popup-container show popup-${kind}`;
-            p.querySelector('#popup-message').textContent = text || '';
-            const iconEl = p.querySelector('#popup-icon');
-            iconEl.className = 'spinner';
-            const iconTextEl = p.querySelector('#popup-icon-text');
-            if(iconTextEl) iconTextEl.textContent = '';
-        } else {
-            p.className = `popup-container show popup-${kind}`;
-            const iconEl = p.querySelector('#popup-icon');
-            const iconTextEl = p.querySelector('#popup-icon-text');
-            iconEl.className = 'material-symbols-outlined';
-            if(iconTextEl) iconTextEl.textContent = (kind === 'success' ? 'check_circle' : (kind === 'error' ? 'error' : 'info'));
-            p.querySelector('#popup-message').textContent = text || '';
-            popupTimeout = setTimeout(() => p.classList.remove('show'), duration);
-        }
-    }
-    
-    // BARU: Fungsi untuk menyembunyikan toast secara manual (penting untuk notif offline)
-    function hideToast() {
-        const p = document.querySelector('#popup-container');
-        if (!p) return;
-        p.classList.remove('show');
     }
     
     function createModal(type, data = {}) {
@@ -287,6 +286,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         setTimeout(() => modalEl.remove(), 300); 
     }
 
+    let pendingUsersUnsub = null;
     async function listenForPendingUsers() {
         if (pendingUsersUnsub) pendingUsersUnsub();
         const q = query(membersCol, where("status", "==", "pending"));
@@ -392,7 +392,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         
     async function signInWithGoogle() { 
         closeModal($('#login-modal'));
-        toast('loading', 'Menghubungkan...'); 
+        toast('syncing', 'Menghubungkan...'); 
         try { 
             appState.justLoggedIn = true;
             await signInWithPopup(auth, new GoogleAuthProvider()); 
@@ -404,7 +404,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
 
     async function handleLogout() { 
         closeModal($('#confirmLogout-modal')); 
-        toast('loading', 'Keluar...'); 
+        toast('syncing', 'Keluar...'); 
         try { 
             await signOut(auth); 
             toast('success', 'Anda telah keluar.'); 
@@ -911,7 +911,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     function _initCustomSelects(context = document) {
         context.querySelectorAll('.custom-select-wrapper').forEach(wrapper => {
             const trigger = wrapper.querySelector('.custom-select-trigger');
-            if (trigger.disabled) return;
+            if (!trigger || trigger.disabled) return;
             const optionsContainer = wrapper.querySelector('.custom-select-options');
             const hiddenInput = wrapper.querySelector('input[type="hidden"]');
             const triggerSpan = trigger.querySelector('span:first-child');
@@ -963,7 +963,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         const amount = parseFormattedNumber($('#pemasukan-jumlah', form).value);
         const date = new Date($('#pemasukan-tanggal', form).value);
 
-        toast('loading', 'Menyimpan...');
+        toast('syncing', 'Menyimpan...');
         try {
             let docData;
             if (type === 'termin') {
@@ -1103,7 +1103,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     async function handlePayBill(billId) {
         createModal('confirmPayBill', {
             onConfirm: async () => {
-                toast('loading', 'Memproses pelunasan...');
+                toast('syncing', 'Memproses pelunasan...');
                 try {
                     const billRef = doc(billsCol, billId);
                     const billSnap = await getDoc(billRef);
@@ -1307,7 +1307,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
     
     async function _saveExpense(expenseData, status, form) {
-        toast('loading', 'Menyimpan pengeluaran...');
+        toast('syncing', 'Menyimpan pengeluaran...');
         try {
             const { invoiceFile, deliveryOrderFile, ...dataToSave } = expenseData;
             
@@ -1318,18 +1318,20 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 deliveryOrderUrl: ''
             });
     
+            // [REVISI] Menggunakan antrian offline jika tidak ada koneksi
             if (!appState.isOnline) {
-                const tempId = `offline_${Date.now()}`;
                 const offlineRecord = {
-                    id: tempId,
-                    type: 'expense',
+                    type: `add-expenses`,
                     payload: dataToSave
                 };
-                const offlineId = await offlineDB.offlineQueue.add(offlineRecord);
-                if(invoiceFile) await offlineDB.offlineFiles.add({ parentId: offlineId, field: 'invoiceUrl', file: invoiceFile });
-                if(deliveryOrderFile) await offlineDB.offlineFiles.add({ parentId: offlineId, field: 'deliveryOrderUrl', file: deliveryOrderFile });
+                const recordId = await offlineDB.offlineQueue.add(offlineRecord);
+                const filesToQueue = [];
+                if (invoiceFile) filesToQueue.push({ parentId: recordId, field: 'invoiceUrl', file: invoiceFile });
+                if (deliveryOrderFile) filesToQueue.push({ parentId: recordId, field: 'deliveryOrderUrl', file: deliveryOrderFile });
                 
-                toast('success', 'Anda offline. Data disimpan lokal & akan disinkronkan.');
+                if(filesToQueue.length > 0) await offlineDB.offlineFiles.bulkAdd(filesToQueue);
+
+                toast('info', 'Anda offline. Data disimpan & akan disinkronkan nanti.');
             } else {
                 const expenseDocRef = await addDoc(expensesCol, dataToSave);
                 if (status === 'unpaid') {
@@ -1346,8 +1348,8 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 }
                 await _logActivity(`Menambah Pengeluaran: ${dataToSave.description}`, { docId: expenseDocRef.id, amount: dataToSave.amount, status });
                 toast('success', 'Data berhasil disimpan!');
-                if (invoiceFile) _uploadFileInBackground(expenseDocRef.id, 'invoiceUrl', invoiceFile);
-                if (deliveryOrderFile) _uploadFileInBackground(expenseDocRef.id, 'deliveryOrderUrl', deliveryOrderFile);
+                if (invoiceFile) _uploadFileInBackground(expenseDocRef.id, 'invoiceUrl', invoiceFile, 'expenses');
+                if (deliveryOrderFile) _uploadFileInBackground(expenseDocRef.id, 'deliveryOrderUrl', deliveryOrderFile, 'expenses');
             }
             
             const currentSubPage = appState.activeSubPage.get('pengeluaran');
@@ -1552,7 +1554,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             });
         }
         
-        toast('loading', `Menambah ${config.title}...`);
+        toast('syncing', `Menambah ${config.title}...`);
         try {
             const newDocRef = doc(config.collection); // [FIX] Generate ref before transaction
             if (type === 'projects' && dataToAdd.projectType === 'main_income') {
@@ -1671,7 +1673,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             });
         }
     
-        toast('loading', `Memperbarui ${config.title}...`);
+        toast('syncing', `Memperbarui ${config.title}...`);
         try {
             if (type === 'projects' && dataToUpdate.projectType === 'main_income') {
                 await runTransaction(db, async (transaction) => {
@@ -1701,7 +1703,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         createModal('confirmDelete', { 
             message: `Anda yakin ingin menghapus ${config.title} "${item[config.nameField]}" ini?`,
             onConfirm: async () => {
-                toast('loading', `Menghapus ${config.title}...`);
+                toast('syncing', `Menghapus ${config.title}...`);
                 try {
                     await deleteDoc(doc(config.collection, id));
                     await _logActivity(`Menghapus Master Data: ${config.title}`, { docId: id, name: item[config.nameField] });
@@ -1721,7 +1723,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     async function handleDeleteItem(id, type) {
         createModal('confirmDelete', { 
             onConfirm: async () => {
-                toast('loading', 'Menghapus data...');
+                toast('syncing', 'Menghapus data...');
                 try {
                     let col, item;
                     if(type === 'termin') { col = incomesCol; item = appState.incomes.find(i=>i.id===id); }
@@ -1788,7 +1790,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         const amount = parseFormattedNumber(form.elements.amount.value);
         const date = new Date(form.elements.date.value);
         
-        toast('loading', 'Memproses pembayaran...');
+        toast('syncing', 'Memproses pembayaran...');
         try {
             const itemRef = doc(fundingSourcesCol, id);
             const itemSnap = await getDoc(itemRef);
@@ -1897,7 +1899,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
 
     async function handleUpdateItem(form) {
         const { id, type } = form.dataset;
-        toast('loading', 'Memperbarui data...');
+        toast('syncing', 'Memperbarui data...');
 
         try {
             let col, dataToUpdate = {};
@@ -2082,23 +2084,33 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         $('#invoice-total-amount').textContent = fmtIDR(totalAmount);
     }
     
-    async function _uploadFileInBackground(docId, fieldToUpdate, file) {
+    // [REVISI] Fungsi upload file dengan notifikasi dan kompresi
+    async function _uploadFileInBackground(docId, fieldToUpdate, file, collectionName = 'expenses') {
         try {
+            toast('syncing', `Mengupload ${file.name}...`, 999999);
             const compressedFile = await _compressImage(file);
-            const storageRef = ref(storage, `expense_attachments/${docId}/${fieldToUpdate}_${Date.now()}.jpg`);
+            const storageRef = ref(storage, `${collectionName}/${docId}/${fieldToUpdate}_${Date.now()}.jpg`);
             const uploadTask = uploadBytesResumable(storageRef, compressedFile);
 
-            uploadTask.on('state_changed', 
-              null, 
-              (error) => console.error(`Upload error for ${fieldToUpdate}:`, error), 
-              async () => {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                await updateDoc(doc(expensesCol, docId), { [fieldToUpdate]: downloadURL });
-                console.log(`${fieldToUpdate} URL updated successfully for doc ${docId}.`);
-              }
-            );
+            return new Promise((resolve, reject) => {
+                uploadTask.on('state_changed', 
+                  null, 
+                  (error) => {
+                    console.error(`Upload error for ${fieldToUpdate}:`, error);
+                    toast('error', `Upload ${file.name} gagal.`);
+                    reject(error);
+                  }, 
+                  async () => {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    await updateDoc(doc(db, 'teams', TEAM_ID, collectionName, docId), { [fieldToUpdate]: downloadURL });
+                    toast('success', `${file.name} berhasil diupload!`);
+                    resolve();
+                  }
+                );
+            });
         } catch (error) {
             console.error(`Failed to process and upload ${fieldToUpdate}:`, error);
+            toast('error', `Gagal memproses ${file.name}.`);
         }
     }
 
@@ -2111,9 +2123,16 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 img.src = event.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const scale = maxWidth / img.width;
-                    canvas.width = maxWidth;
-                    canvas.height = img.height * scale;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                     canvas.toBlob(blob => {
@@ -2128,44 +2147,30 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     // =======================================================
-    //         [BARU] INISIALISASI & EVENT LISTENER UTAMA
+    //         [REVISI] INISIALISASI & EVENT LISTENER UTAMA
     // =======================================================
     function init() {
         // --- [BARU] Logika untuk Swipe Navigasi ---
-        let touchstartX = 0;
-        let touchendX = 0;
-        let touchstartY = 0;
-        let touchendY = 0;
+        let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
 
         function handleSwipeGesture() {
             const deltaX = touchendX - touchstartX;
             const deltaY = touchendY - touchstartY;
 
-            // Hanya proses swipe horizontal yang signifikan
             if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 100) return;
 
             const container = $('.page-container');
             const activeSubNav = container.querySelector('.sub-nav');
 
             if (activeSubNav) {
-                // Handle swipe untuk sub-tab
                 const tabs = $$('.sub-nav-item', activeSubNav);
                 const activeTabIndex = tabs.findIndex(tab => tab.classList.contains('active'));
                 if (activeTabIndex === -1) return;
 
-                let nextTabIndex;
-                if (touchendX < touchstartX) { // Geser ke kiri
-                    nextTabIndex = activeTabIndex + 1;
-                }
-                if (touchendX > touchstartX) { // Geser ke kanan
-                    nextTabIndex = activeTabIndex - 1;
-                }
+                let nextTabIndex = (touchendX < touchstartX) ? activeTabIndex + 1 : activeTabIndex - 1;
+                if (nextTabIndex >= 0 && nextTabIndex < tabs.length) tabs[nextTabIndex].click();
 
-                if (nextTabIndex >= 0 && nextTabIndex < tabs.length) {
-                    tabs[nextTabIndex].click();
-                }
             } else {
-                // Handle swipe untuk halaman utama
                 let navIdsToShow = [];
                 if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
                 else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
@@ -2173,34 +2178,15 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 
                 const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
                 const currentAccessibleIndex = accessibleLinks.findIndex(link => link.id === appState.activePage);
-
                 if (currentAccessibleIndex === -1) return;
 
-                let nextNavIndex;
-                if (touchendX < touchstartX) { // Geser ke kiri
-                    nextNavIndex = currentAccessibleIndex + 1;
-                }
-                if (touchendX > touchstartX) { // Geser ke kanan
-                    nextNavIndex = currentAccessibleIndex - 1;
-                }
-
-                if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) {
-                    handleNavigation(accessibleLinks[nextNavIndex].id);
-                }
+                let nextNavIndex = (touchendX < touchstartX) ? currentAccessibleIndex + 1 : currentAccessibleIndex - 1;
+                if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) handleNavigation(accessibleLinks[nextNavIndex].id);
             }
         }
 
-        document.body.addEventListener('touchstart', e => {
-            touchstartX = e.changedTouches[0].screenX;
-            touchstartY = e.changedTouches[0].screenY;
-        }, { passive: true });
-
-        document.body.addEventListener('touchend', e => {
-            touchendX = e.changedTouches[0].screenX;
-            touchendY = e.changedTouches[0].screenY;
-            handleSwipeGesture();
-        }, { passive: true });
-
+        document.body.addEventListener('touchstart', e => { touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY; }, { passive: true });
+        document.body.addEventListener('touchend', e => { touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY; handleSwipeGesture(); }, { passive: true });
 
         // --- Event Listener Utama (click) ---
         document.body.addEventListener('click', (e) => {
@@ -2217,26 +2203,14 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             let expenseId = actionTarget.dataset.expenseId || card?.dataset.expenseId;
             let manager = actionTarget.closest('.master-data-manager');
             if (manager) type = manager.dataset.type;
-
-            if (isViewer() && actionTarget.dataset.action.startsWith('manage')) return;
-            
             let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
 
             switch (actionTarget.dataset.action) {
-                case 'view-attachment':
-                    createModal('imageView', { src: actionTarget.dataset.src });
-                    break;
-                case 'delete-attachment':
-                    // NOTE: `isViewer()` adalah fungsi helper dari file lengkap Anda
-                    if(isViewer()) return;
-                    handleDeleteAttachment(actionTarget.dataset);
-                    break;
-            
+                case 'view-attachment': createModal('imageView', { src: actionTarget.dataset.src }); break;
                 case 'navigate': handleNavigation(navTarget); break;
                 case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
                 case 'open-detail': {
-                    if (!card) return;
-                    e.preventDefault();
+                    if (!card) return; e.preventDefault();
                     const sourceList = (type === 'termin') ? appState.incomes : appState.fundingSources;
                     const item = sourceList.find(i => i.id === id);
                     if (item) {
@@ -2246,49 +2220,29 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                     }
                     break;
                 }
-                case 'open-bill-detail': {
-                    if(!card) return;
-                    e.preventDefault();
-                    handleOpenBillDetail(id, expenseId);
-                    break;
-                }
+                case 'open-bill-detail': if(card) { e.preventDefault(); handleOpenBillDetail(id, expenseId); } break;
                 case 'open-actions': {
-                    if (isViewer()) return;
-                    e.preventDefault();
+                    if (isViewer()) return; e.preventDefault();
                     let actions = [];
                     if (type === 'bill') {
                         const bill = appState.bills.find(b => b.id === id);
                         if (!bill) return;
-
-                        if (bill.status === 'unpaid') {
-                            actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type });
-                        }
+                        if (bill.status === 'unpaid') actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type });
                         if (bill.expenseId) {
                             actions.push({ label: 'Edit', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
                             actions.push({ label: 'Hapus', action: 'delete-item', icon: 'delete', id: bill.expenseId, type: 'expense' });
                         } else if (bill.type === 'gaji') {
                             actions.push({ label: 'Hapus Tagihan', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
                         }
-
                     } else if (type === 'expense') {
-                         actions = [
-                            { label: 'Edit', action: 'edit-item', icon: 'edit', id, type },
-                            { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }
-                         ];
+                         actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
                     } else {
                         const list = type === 'termin' ? appState.incomes : appState.fundingSources;
                         const item = list.find(i => i.id === id);
                         if (!item) return;
-
-                        actions = [
-                            { label: 'Edit', action: 'edit-item', icon: 'edit', id, type },
-                            { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }
-                        ];
-
+                        actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
                         const isPaid = item.status === 'paid' || ((item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0)) <= 0;
-                        if (type === 'pinjaman' && !isPaid) {
-                            actions.unshift({ label: 'Bayar', action: 'pay-item', icon: 'payment', id, type });
-                        }
+                        if (type === 'pinjaman' && !isPaid) actions.unshift({ label: 'Bayar', action: 'pay-item', icon: 'payment', id, type });
                     }
                     createModal('actionsMenu', { actions, targetRect: actionTarget.getBoundingClientRect() });
                     break;
@@ -2300,19 +2254,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 case 'manage-master': if (isViewer()) return; handleManageMasterData(actionTarget.dataset.type); break;
                 case 'manage-master-global':
                      if (isViewer()) return;
-                     createModal('dataDetail', {
-                        title: 'Pilih Master Data',
-                        content: `
-                            <div class="settings-list">
-                                ${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `
-                                    <div class="settings-list-item" data-action="manage-master" data-type="${key}">
-                                        <div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div>
-                                        <span class="label">${config.title}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `
-                    });
+                     createModal('dataDetail', { title: 'Pilih Master Data', content: `<div class="settings-list">${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `<div class="settings-list-item" data-action="manage-master" data-type="${key}"><div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div><span class="label">${config.title}</span></div>`).join('')}</div>`});
                     break;
                 case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
                 case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
@@ -2323,30 +2265,17 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
                 case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
                 case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
-                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(id); break;
+                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break; // [REVISI] Menggunakan dataset
                 case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
                 case 'download-report': _handleDownloadReport('pdf'); break;
                 case 'download-csv': _handleDownloadReport('csv'); break;
             }
         });
 
-    window.addEventListener('online', () => {
-        appState.isOnline = true; // Pastikan appState diupdate
-        hideToast(); // Sembunyikan notif offline
-        toast('syncing', 'Kembali online, menyinkronkan data...');
-        syncOfflineData(); // Panggil fungsi sinkronisasi Anda
-    });
-    window.addEventListener('offline', () => {
-        appState.isOnline = false; // Pastikan appState diupdate
-        toast('offline', 'Anda sedang offline');
-    });
-
-    // BARU: Cek status koneksi saat aplikasi pertama kali dimuat
-    if (!navigator.onLine) {
-        toast('offline', 'Anda sedang offline');
+        window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online', 2000); syncOfflineData(); });
+        window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
+        if (!navigator.onLine) toast('offline', 'Anda sedang offline');
     }
-}
-
 
     function handleNavigation(pageId) {
         if (!pageId || appState.activePage === pageId) return;
@@ -2402,6 +2331,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         `;
     }
 
+    // [REVISI] Fungsi untuk menampilkan detail tagihan dengan tombol upload
     async function _createBillDetailContentHTML(bill, expenseData) {
         const remainingAmount = bill ? (bill.amount || 0) - (bill.paidAmount || 0) : 0;
         
@@ -2413,35 +2343,43 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 ${expenseData.items.map(item => `
                     <div>
                         <dt>${item.name} (${item.qty}x)</dt>
-                        <dd>${new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(item.total)}</dd>
+                        <dd>${fmtIDR(item.total)}</dd>
                     </div>
                 `).join('')}
                 </dl>
             `;
         }
     
-        // BARU: Logika untuk membuat galeri lampiran dengan tombol lihat dan hapus
-        let attachmentsHTML = '';
-        if (expenseData.invoiceUrl || expenseData.deliveryOrderUrl) {
-            const createAttachmentItem = (url, label, field) => {
-                if (!url) return '';
-                return `
-                <div class="attachment-item">
-                    <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
-                    <span>${label}</span>
-                    <div class="attachment-actions">
-                        ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${expenseData.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
-                    </div>
-                </div>`;
-            }
-            attachmentsHTML = `
-                <h5 class="detail-section-title">Lampiran</h5>
-                <div class="attachment-gallery">
-                    ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
-                    ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
+        const createAttachmentItem = (url, label, field) => {
+            if (!url) return '';
+            return `
+            <div class="attachment-item">
+                <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
+                <span>${label}</span>
+                <div class="attachment-actions">
+                    ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${expenseData.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
                 </div>
-            `;
+            </div>`;
         }
+        
+        let uploadButtonHTML = '';
+        if (!isViewer()) {
+            if (!expenseData.invoiceUrl) {
+                uploadButtonHTML += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`;
+            }
+            if (!expenseData.deliveryOrderUrl) {
+                uploadButtonHTML += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`;
+            }
+        }
+
+        const attachmentsHTML = `
+            <h5 class="detail-section-title">Lampiran</h5>
+            <div class="attachment-gallery">
+                ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
+                ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
+            </div>
+            ${uploadButtonHTML ? `<div class="rekap-actions" style="grid-template-columns: 1fr 1fr; margin-top: 1rem;">${uploadButtonHTML}</div>` : ''}
+        `;
         
         return `
             <div class="payment-summary">
@@ -2456,36 +2394,56 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         `;
     }
     
-    // BARU: Fungsi untuk menangani penghapusan lampiran
+    // [REVISI] Fungsi untuk menangani penghapusan lampiran
     async function handleDeleteAttachment(dataset) {
         const { id, field } = dataset;
-        const expense = appState.expenses.find(e => e.id === id);
-        if (!expense || !expense[field]) {
-            toast('error', 'Lampiran tidak ditemukan.');
-            return;
-        }
-    
+        const docRef = doc(expensesCol, id);
+        
         createModal('confirmDeleteAttachment', {
             onConfirm: async () => {
-                toast('loading', 'Menghapus lampiran...');
+                toast('syncing', 'Menghapus lampiran...');
                 try {
-                    const fileRef = ref(storage, expense[field]);
-                    await deleteObject(fileRef);
+                    const expenseSnap = await getDoc(docRef);
+                    if(!expenseSnap.exists()) throw new Error("Pengeluaran tidak ditemukan");
                     
-                    const expenseRef = doc(expensesCol, id);
-                    await updateDoc(expenseRef, { [field]: '' });
+                    const urlToDelete = expenseSnap.data()[field];
+                    if(urlToDelete) {
+                        const fileRef = ref(storage, urlToDelete);
+                        await deleteObject(fileRef).catch(err => console.warn("File di storage tidak ada, mungkin sudah dihapus:", err));
+                    }
                     
+                    await updateDoc(docRef, { [field]: '' });
                     await _logActivity(`Menghapus Lampiran`, { expenseId: id, field });
                     
                     toast('success', 'Lampiran berhasil dihapus.');
-                    closeModal(document.querySelector('#dataDetail-modal'));
-                    renderPageContent(); // Render ulang halaman untuk menampilkan perubahan
+                    closeModal($('#dataDetail-modal'));
+                    handleOpenBillDetail(null, id); // Refresh modal
                 } catch(error) {
                     toast('error', 'Gagal menghapus lampiran.');
                     console.error("Attachment deletion error:", error);
                 }
             }
         });
+    }
+
+    // [REVISI] Fungsi untuk menangani upload dari detail tagihan
+    function handleUploadAttachment(dataset) {
+        const { id, field } = dataset;
+        const uploader = $('#attachment-uploader');
+        if (!uploader) return;
+        uploader.value = ''; // Reset input file
+
+        uploader.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            await _uploadFileInBackground(id, field, file, 'expenses');
+            
+            // Render ulang detail modal untuk menampilkan gambar baru
+            closeModal($('#dataDetail-modal'));
+            handleOpenBillDetail(null, id);
+        };
+        uploader.click();
     }
     
     function handlePayBillModal(billId) {
@@ -2524,7 +2482,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             toast('error', 'Jumlah pembayaran harus lebih dari nol.'); return;
         }
 
-        toast('loading', 'Memproses pembayaran...');
+        toast('syncing', 'Memproses pembayaran...');
         try {
             const billRef = doc(billsCol, billId);
             
@@ -2754,7 +2712,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             return;
         }
 
-        toast('loading', 'Mencatat jam masuk...');
+        toast('syncing', 'Mencatat jam masuk...');
         try {
             const worker = appState.workers.find(w => w.id === workerId);
             if (!worker) throw new Error('Pekerja tidak ditemukan');
@@ -2777,7 +2735,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     async function handleCheckOut(recordId) {
-        toast('loading', 'Mencatat jam keluar...');
+        toast('syncing', 'Mencatat jam keluar...');
         try {
             const recordRef = doc(attendanceRecordsCol, recordId);
             const recordSnap = await getDoc(recordRef);
@@ -2844,7 +2802,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         const newCheckInString = form.elements.checkIn.value;
         const newCheckOutString = form.elements.checkOut.value;
         
-        toast('loading', 'Memperbarui absensi...');
+        toast('syncing', 'Memperbarui absensi...');
         try {
             const recordRef = doc(attendanceRecordsCol, recordId);
             const recordSnap = await getDoc(recordRef);
@@ -3001,7 +2959,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         if (!recordIdsCSV) return;
         createModal('confirmDeleteRecap', {
             onConfirm: async () => {
-                toast('loading', 'Menghapus data absensi...');
+                toast('syncing', 'Menghapus data absensi...');
                 try {
                     const recordIds = recordIdsCSV.split(',');
                     const batch = writeBatch(db);
@@ -3040,7 +2998,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         createModal('confirmGenerateBill', {
             message: `Buat tagihan gaji sebesar ${fmtIDR(amount)} untuk ${workerName}?`,
             onConfirm: async () => {
-                toast('loading', 'Membuat tagihan gaji...');
+                toast('syncing', 'Membuat tagihan gaji...');
                 try {
                     const q = query(billsCol, where("description", "==", description), where("type", "==", "gaji"));
                     const existingBill = await getDocs(q);
@@ -3184,7 +3142,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             toast('error', 'Proyek harus dipilih.'); return;
         }
 
-        toast('loading', 'Menyimpan absensi...');
+        toast('syncing', 'Menyimpan absensi...');
         try {
             const batch = writeBatch(db);
             const workers = $$('.attendance-status-selector', form);
@@ -3234,19 +3192,16 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     async function handleManageUsers() {
-        toast('loading', 'Memuat data pengguna...');
+        toast('syncing', 'Memuat data pengguna...');
         try {
-            // [ALTERNATIF 1] Ambil pengguna 'pending' secara eksplisit
             const pendingQuery = query(membersCol, where("status", "==", "pending"));
             const pendingSnap = await getDocs(pendingQuery);
             const pendingUsers = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            // [ALTERNATIF 2] Ambil pengguna lainnya (yang tidak 'pending')
             const otherUsersQuery = query(membersCol, where("status", "!=", "pending"));
             const otherUsersSnap = await getDocs(otherUsersQuery);
             const otherUsers = otherUsersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            // [BARU] Gabungkan hasil ke dalam state global jika diperlukan
             appState.users = [...pendingUsers, ...otherUsers];
 
             const createUserHTML = (user) => {
@@ -3323,7 +3278,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         createModal('confirmUserAction', {
             message: action.message,
             onConfirm: async () => {
-                toast('loading', 'Memproses...');
+                toast('syncing', 'Memproses...');
                 try {
                     const userRef = doc(membersCol, id);
                     if (type === 'delete') {
@@ -3337,61 +3292,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 } catch (error) {
                     toast('error', 'Gagal memproses aksi.');
                     console.error('User action error:', error);
-                }
-            }
-        });
-    }
-
-    async function handleUploadAttachment(expenseId) {
-        const uploader = $('#attachment-uploader');
-        if(!uploader) return;
-
-        uploader.onchange = async (e) => {
-            const files = e.target.files;
-            if(!files || files.length === 0) return;
-
-            toast('loading', 'Mengupload lampiran...');
-            const file = files[0];
-
-            if (!appState.isOnline) {
-                const offlineId = `offline_attachment_${Date.now()}`;
-                await offlineDB.offlineFiles.add({ parentId: expenseId, field: 'invoiceUrl', file, id: offlineId });
-                toast('success', 'Anda offline. Gambar akan diupload saat kembali online.');
-                return;
-            }
-            
-            await _uploadFileInBackground(expenseId, 'invoiceUrl', file);
-            await _logActivity(`Mengupload Lampiran`, { expenseId });
-            toast('success', 'Upload berhasil.');
-            const currentTab = appState.activeSubPage.get('pengeluaran');
-            _rerenderPengeluaranList(currentTab);
-        };
-        uploader.click();
-    }
-
-    async function handleDeleteAttachment(dataset) {
-        const { id, field } = dataset;
-        createModal('confirmDeleteAttachment', {
-            onConfirm: async () => {
-                toast('loading', 'Menghapus lampiran...');
-                try {
-                    const expenseRef = doc(expensesCol, id);
-                    const expenseSnap = await getDoc(expenseRef);
-                    if(!expenseSnap.exists()) throw new Error("Pengeluaran tidak ditemukan");
-
-                    const urlToDelete = expenseSnap.data()[field];
-                    if(urlToDelete) {
-                        const fileRef = ref(storage, urlToDelete);
-                        await deleteObject(fileRef);
-                    }
-                    await updateDoc(expenseRef, { [field]: '' });
-                    await _logActivity(`Menghapus Lampiran`, { expenseId: id, field });
-                    
-                    toast('success', 'Lampiran berhasil dihapus.');
-                    closeModal($('#dataDetail-modal'));
-                } catch(error) {
-                    toast('error', 'Gagal menghapus lampiran.');
-                    console.error("Attachment deletion error:", error);
                 }
             }
         });
@@ -3720,7 +3620,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     function _downloadPDF(headers, data, filename) {
-        toast('loading', 'Membuat PDF...');
+        toast('syncing', 'Membuat PDF...');
         if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF.autoTable === 'undefined') {
             toast('error', 'Pustaka PDF gagal dimuat. Coba muat ulang halaman.');
             console.error('jsPDF atau autoTable tidak ditemukan.');
@@ -3778,37 +3678,68 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         container.innerHTML = `<div class="log-container">${logHTML}</div>`;
     }
 
-    // =======================================================
-    //         SINKRONISASI OFFLINE
-    // =======================================================
+    // [REVISI] SINKRONISASI OFFLINE YANG LEBIH BAIK
     async function syncOfflineData() {
+        if (appState.isSyncing || !appState.isOnline) return;
+
         const offlineItems = await offlineDB.offlineQueue.toArray();
-        if (offlineItems.length === 0) { console.log('Tidak ada data offline untuk disinkronkan.'); return; }
-        toast('loading', `Menyinkronkan ${offlineItems.length} data...`);
+        if (offlineItems.length === 0) {
+            hideToast();
+            return;
+        }
+
+        appState.isSyncing = true;
+        toast('syncing', `Menyinkronkan ${offlineItems.length} data...`);
+        let successCount = 0;
+
         for (const item of offlineItems) {
             try {
-                if (item.type === 'expense') {
-                    const expenseDocRef = await addDoc(expensesCol, item.payload);
+                let docRef;
+                let collectionName = '';
+                if (item.type.startsWith('add-')) {
+                    collectionName = item.type.replace('add-', '');
+                    const col = collection(db, 'teams', TEAM_ID, collectionName);
+                    docRef = await addDoc(col, item.payload);
+                    
                     if (item.payload.status === 'unpaid') {
                         await addDoc(billsCol, {
-                            expenseId: expenseDocRef.id, description: item.payload.description,
-                            amount: item.payload.amount, paidAmount: 0, dueDate: item.payload.date,
-                            status: 'unpaid', type: item.payload.type, createdAt: serverTimestamp()
+                            expenseId: docRef.id,
+                            description: item.payload.description,
+                            amount: item.payload.amount,
+                            paidAmount: 0,
+                            dueDate: item.payload.date,
+                            status: 'unpaid',
+                            type: item.payload.type,
+                            createdAt: serverTimestamp()
                         });
                     }
-                    const offlineFiles = await offlineDB.offlineFiles.where('parentId').equals(item.id).toArray();
-                    for(const fileRecord of offlineFiles) {
-                        await _uploadFileInBackground(expenseDocRef.id, fileRecord.field, fileRecord.file);
+                }
+                
+                const offlineFiles = await offlineDB.offlineFiles.where({ parentId: item.id }).toArray();
+                if (offlineFiles.length > 0 && docRef) {
+                    for (const fileRecord of offlineFiles) {
+                        await _uploadFileInBackground(docRef.id, fileRecord.field, fileRecord.file, collectionName);
                         await offlineDB.offlineFiles.delete(fileRecord.id);
                     }
                 }
+
                 await offlineDB.offlineQueue.delete(item.id);
-            } catch (error) { console.error('Gagal menyinkronkan item:', item, error); }
+                successCount++;
+            } catch (error) {
+                console.error('Gagal menyinkronkan item:', item, error);
+            }
         }
-        toast('success', 'Sinkronisasi selesai.');
-        renderPageContent();
+        
+        appState.isSyncing = false;
+        if (successCount > 0) {
+            toast('success', `${successCount} data berhasil disinkronkan.`);
+            renderPageContent();
+        } else {
+            toast('error', 'Gagal menyinkronkan beberapa data.');
+        }
     }
     
     // Pindahkan pemanggilan init() ke dalam listener
     init();
 });
+
