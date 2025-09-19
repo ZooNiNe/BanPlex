@@ -5,11 +5,13 @@
 //                       IMPORT PUSTAKA
 // =======================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+// [DIUBAH] Menambahkan getRedirectResult untuk metode login baru
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 import { 
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
     query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, 
-    enableIndexedDbPersistence
+    // [DIUBAH] Mengganti enableIndexedDbPersistence dengan initializeFirestore dan persistentLocalCache
+    initializeFirestore, persistentLocalCache 
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
@@ -47,18 +49,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const db = getFirestore(app);
-    const storage = getStorage(app);
+    
+    // [DIUBAH] Cara baru untuk inisialisasi Firestore dengan mode offline (cache)
+    let db;
     try {
-        await enableIndexedDbPersistence(db);
+        db = initializeFirestore(app, {
+            cache: persistentLocalCache()
+        });
         console.log("Mode offline Firestore diaktifkan.");
     } catch (err) {
+        db = getFirestore(app); // Fallback jika mode offline gagal
         if (err.code == 'failed-precondition') {
             console.warn("Gagal mengaktifkan mode offline (mungkin karena tab lain sudah terbuka).");
         } else if (err.code == 'unimplemented') {
             console.log("Mode offline tidak didukung di browser ini.");
         }
     }
+    
+    const storage = getStorage(app);
+
+    // [BARU] Menangani hasil setelah redirect dari halaman login
+    getRedirectResult(auth)
+        .then((result) => {
+            if (result) {
+                // Pengguna baru saja login melalui redirect.
+                // onAuthStateChanged akan menangani pembaruan UI.
+                toast('syncing', 'Login berhasil, memuat data...');
+            }
+        }).catch((error) => {
+            console.error("Error setelah redirect login:", error);
+            toast('error', `Login gagal: ${error.message}`);
+        });
 
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(2).stores({ // Versi ditingkatkan untuk mendukung file
@@ -404,12 +425,13 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         });
     }
         
+    // [DIUBAH] Menggunakan signInWithRedirect untuk menghindari masalah Cross-Origin-Policy
     async function signInWithGoogle() { 
         closeModal($('#login-modal'));
-        toast('syncing', 'Menghubungkan...'); 
+        toast('syncing', 'Mengarahkan ke halaman login...'); 
         try { 
             appState.justLoggedIn = true;
-            await signInWithPopup(auth, new GoogleAuthProvider()); 
+            await signInWithRedirect(auth, new GoogleAuthProvider()); 
         } catch (error) { 
             toast('error', `Login gagal.`); 
             appState.justLoggedIn = false;
@@ -2532,7 +2554,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             console.error('Bill Payment error:', error);
         }
     }
-    
+
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK ABSENSI
     // =======================================================
@@ -2780,7 +2802,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             console.error(error);
         }
     }
-
+    
     async function handleEditAttendanceModal(recordId) {
         const recordRef = doc(attendanceRecordsCol, recordId);
         const recordSnap = await getDoc(recordRef);
