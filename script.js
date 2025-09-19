@@ -806,6 +806,7 @@ async function main() {
         } catch (e) {
             console.warn('updateNavActiveState failed:', e);
         }
+    }
 
     async function renderDashboardPage() {
         const container = $('.page-container');
