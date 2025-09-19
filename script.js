@@ -76,22 +76,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isViewer = () => appState.userRole === 'Viewer';
     let popupTimeout;
     
-    // [REVISI] Fungsi Toast yang lebih canggih dan tidak mengganggu
+    // [DIUBAH] Fungsi Toast diperbaiki agar lebih andal
     let toastTimeout;
     function toast(type, message, duration = 3000) {
         clearTimeout(toastTimeout);
         const container = $('#popup-container');
-        const content = container.querySelector('.popup-content');
-        if (!content) { 
-            container.innerHTML = `<div class="popup-content"><span id="popup-icon"></span><p id="popup-message"></p></div>`;
+        if (!container) return; // Pemeriksaan keamanan
+
+        // Cek apakah konten notifikasi perlu dibuat
+        if (!container.querySelector('.popup-content')) {
+            container.innerHTML = `
+                <div class="popup-content">
+                    <span id="popup-icon"></span>
+                    <p id="popup-message"></p>
+                </div>`;
         }
-        const iconEl = $('#popup-icon');
-        const msgEl = $('#popup-message');
+
+        // Sekarang kita YAKIN struktur HTML sudah ada, baru kita cari elemennya
+        const iconEl = $('#popup-icon', container);
+        const msgEl = $('#popup-message', container);
+
+        // Pemeriksaan keamanan tambahan jika elemen tidak ditemukan
+        if (!msgEl || !iconEl) {
+            console.error("Elemen toast (pesan atau ikon) tidak ditemukan di dalam container.");
+            return;
+        }
 
         const icons = { success: 'check_circle', error: 'error', info: 'info' };
         
         container.className = `popup-container popup-${type}`;
-        msgEl.textContent = message;
+        msgEl.textContent = message; // Baris ini yang sebelumnya error
 
         if (['offline', 'online', 'syncing'].includes(type)) {
             iconEl.className = 'spinner';
@@ -2518,7 +2532,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             console.error('Bill Payment error:', error);
         }
     }
-
+    
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK ABSENSI
     // =======================================================
