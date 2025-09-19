@@ -387,13 +387,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         if (btn) btn.setAttribute('disabled', 'true');
         sessionStorage.setItem('isSigningIn', 'true');
         try {
-            // Beberapa Android/WebView lebih stabil dengan redirect
-            const FORCE_REDIRECT = /Android/i.test(navigator.userAgent) || window.matchMedia('(display-mode: standalone)').matches;
-            if (FORCE_REDIRECT) {
-                toast('syncing', 'Mengarahkan ke halaman login...');
-                await signInWithRedirect(auth, provider);
-                return; // akan dialihkan, tidak lanjut
-            }
+            // Coba popup terlebih dahulu di semua platform; fallback ke redirect hanya bila perlu
             await signInWithPopup(auth, provider);
             toast('success', 'Login berhasil. Menyiapkan akun...');
         } catch (err) {
