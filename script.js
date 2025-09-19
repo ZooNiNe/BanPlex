@@ -5,10 +5,9 @@
 //                       IMPORT PUSTAKA
 // =======================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-// [DIUBAH] Menambahkan setPersistence dan browserLocalPersistence
 import { 
-    getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut,
-    setPersistence, browserLocalPersistence 
+    getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, signInWithPopup, getRedirectResult, signOut,
+    setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 import { 
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
@@ -17,10 +16,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
 
-document.addEventListener('DOMContentLoaded', async () => {
+// [STRUKTUR UTAMA] Bungkus semua logika ke dalam fungsi async main()
+async function main() {
 
     // =======================================================
-    //                KONFIGURASI & STATE GLOBAL
+    //          FASE 1: KONFIGURASI & STATE GLOBAL
     // =======================================================
     const firebaseConfig = {
       apiKey: "AIzaSyBDTURKKzmhG8hZXlBryoQRdjqd70GI18c",
@@ -33,6 +33,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const TEAM_ID = 'main';
     const OWNER_EMAIL = 'dq060412@gmail.com';
 
+    const ALL_NAV_LINKS = [
+        { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', roles: ['Owner', 'Editor', 'Viewer'] },
+        { id: 'pemasukan', icon: 'account_balance_wallet', label: 'Pemasukan', roles: ['Owner'] },
+        { id: 'pengeluaran', icon: 'post_add', label: 'Pengeluaran', roles: ['Owner', 'Editor'] },
+        { id: 'absensi', icon: 'person_check', label: 'Absensi', roles: ['Owner', 'Editor'] },
+        { id: 'stok', icon: 'inventory_2', label: 'Stok', roles: ['Owner', 'Editor', 'Viewer'] },
+        { id: 'tagihan', icon: 'receipt_long', label: 'Tagihan', roles: ['Owner', 'Editor', 'Viewer'] },
+        { id: 'laporan', icon: 'monitoring', label: 'Laporan', roles: ['Owner', 'Viewer'] },
+        { id: 'pengaturan', icon: 'settings', label: 'Pengaturan', roles: ['Owner', 'Editor', 'Viewer'] },
+    ];
+    
     const appState = {
         currentUser: null,
         userRole: 'Guest',
@@ -49,68 +60,83 @@ document.addEventListener('DOMContentLoaded', async () => {
         attendance: new Map(), users: [],
     };
 
+    if (sessionStorage.getItem('isSigningIn') === 'true') {
+        appState.justLoggedIn = true;
+        sessionStorage.removeItem('isSigningIn');
+    }
+
+    // Inisialisasi Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    const storage = getStorage(app);
+    let db;
     
-    // [BARU] Mengatur metode penyimpanan login agar lebih andal
     try {
         await setPersistence(auth, browserLocalPersistence);
-        console.log("Penyimpanan status login diatur ke lokal.");
     } catch (error) {
-        console.error("Gagal mengatur persistensi login:", error);
+        console.warn("Persistensi localStorage tidak tersedia. Fallback ke session.", error?.code || error);
+        try {
+            await setPersistence(auth, browserSessionPersistence);
+        } catch (err2) {
+            console.warn("Persistensi session tidak tersedia. Fallback ke in-memory.", err2?.code || err2);
+            await setPersistence(auth, inMemoryPersistence);
+        }
     }
     
-    let db;
     try {
-        db = initializeFirestore(app, {
-            cache: persistentLocalCache()
-        });
-        console.log("Mode offline Firestore diaktifkan.");
+        db = initializeFirestore(app, { cache: persistentLocalCache() });
     } catch (err) {
-        db = getFirestore(app); // Fallback jika mode offline gagal
-        if (err.code == 'failed-precondition') {
-            console.warn("Gagal mengaktifkan mode offline (mungkin karena tab lain sudah terbuka).");
-        } else if (err.code == 'unimplemented') {
-            console.log("Mode offline tidak didukung di browser ini.");
-        }
+        db = getFirestore(app);
+        console.warn("Gagal mengaktifkan mode offline Firestore.", err.code);
     }
     
-    const storage = getStorage(app);
-
-    // [DIUBAH] Tunggu hasil redirect SEBELUM memasang listener utama
-    // Ini memperbaiki masalah login di perangkat seluler
-    try {
-        const result = await getRedirectResult(auth);
-        if (result) {
-            // Pengguna baru saja login. onAuthStateChanged akan menangani UI.
-            toast('syncing', 'Login berhasil, memuat data...');
-        }
-    } catch (error) {
-        console.error("Error setelah redirect login:", error);
-        toast('error', `Login gagal: ${error.message}`);
-    }
-
+    // Inisialisasi Database Lokal (Dexie)
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(2).stores({ 
         offlineQueue: '++id, type, payload',
         offlineFiles: '++id, parentId, field, file'
     });
-    
+
+    // Deklarasi Referensi Koleksi Firestore
+    const membersCol = collection(db, 'teams', TEAM_ID, 'members');
+    const projectsCol = collection(db, 'teams', TEAM_ID, 'projects');
+    const clientsCol = collection(db, 'teams', TEAM_ID, 'clients');
+    const fundingCreditorsCol = collection(db, 'teams', TEAM_ID, 'funding_creditors');
+    const opCatsCol = collection(db, 'teams', TEAM_ID, 'operational_categories');
+    const matCatsCol = collection(db, 'teams', TEAM_ID, 'material_categories');
+    const otherCatsCol = collection(db, 'teams', TEAM_ID, 'other_categories');
+    const suppliersCol = collection(db, 'teams', TEAM_ID, 'suppliers');
+    const workersCol = collection(db, 'teams', TEAM_ID, 'workers');
+    const professionsCol = collection(db, 'teams', TEAM_ID, 'professions');
+    const attendanceRecordsCol = collection(db, 'teams', TEAM_ID, 'attendance_records');
+    const incomesCol = collection(db, 'teams', TEAM_ID, 'incomes');
+    const fundingSourcesCol = collection(db, 'teams', TEAM_ID, 'funding_sources');
+    const expensesCol = collection(db, 'teams', TEAM_ID, 'expenses');
+    const billsCol = collection(db, 'teams', TEAM_ID, 'bills');
+    const logsCol = collection(db, 'teams', TEAM_ID, 'logs');
+
+    let pendingUsersUnsub = null;
+    let roleUnsub = null;
+    let isInitializingSession = false;
+    let isSignInInProgress = false;
+    let lastAuthUid = null;
+    let suppressGuestUntil = 0;
+    let toastTimeout = null;
+
     // =======================================================
-    //                FUNGSI UTILITAS
+    //          FASE 2: DEKLARASI SEMUA FUNGSI APLIKASI
     // =======================================================
+
+    // --- FUNGSI UTILITAS ---
     const $ = (s, context = document) => context.querySelector(s);
     const $$ = (s, context = document) => Array.from(context.querySelectorAll(s));
     const fmtIDR = (n) => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:0}).format(Number(n||0));
     const parseFormattedNumber = (str) => Number(String(str).replace(/[^0-9]/g, ''));
     const isViewer = () => appState.userRole === 'Viewer';
-    let popupTimeout;
     
-    let toastTimeout;
     function toast(type, message, duration = 3000) {
-        clearTimeout(toastTimeout);
         const container = $('#popup-container');
-        if (!container) return; 
+        if (!container) return;
 
         if (!container.querySelector('.popup-content')) {
             container.innerHTML = `
@@ -133,6 +159,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.className = `popup-container popup-${type}`;
         msgEl.textContent = message; 
 
+        // clear previous timer if any
+        if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; }
+
         if (['offline', 'online', 'syncing'].includes(type)) {
             iconEl.className = 'spinner';
             container.classList.add('show');
@@ -143,26 +172,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             toastTimeout = setTimeout(() => container.classList.remove('show'), duration);
         }
     }
-    const hideToast = () => $('#popup-container').classList.remove('show');
+    const hideToast = () => { if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; } const el = $('#popup-container'); if (el) el.classList.remove('show'); };
 
     
-    const membersCol = collection(db, 'teams', TEAM_ID, 'members');
-    const projectsCol = collection(db, 'teams', TEAM_ID, 'projects');
-    const clientsCol = collection(db, 'teams', TEAM_ID, 'clients');
-    const fundingCreditorsCol = collection(db, 'teams', TEAM_ID, 'funding_creditors');
-    const opCatsCol = collection(db, 'teams', TEAM_ID, 'operational_categories');
-    const matCatsCol = collection(db, 'teams', TEAM_ID, 'material_categories');
-    const otherCatsCol = collection(db, 'teams', TEAM_ID, 'other_categories');
-    const suppliersCol = collection(db, 'teams', TEAM_ID, 'suppliers');
-    const workersCol = collection(db, 'teams', TEAM_ID, 'workers');
-    const professionsCol = collection(db, 'teams', TEAM_ID, 'professions');
-    const attendanceRecordsCol = collection(db, 'teams', TEAM_ID, 'attendance_records');
-    const incomesCol = collection(db, 'teams', TEAM_ID, 'incomes');
-    const fundingSourcesCol = collection(db, 'teams', TEAM_ID, 'funding_sources');
-    const expensesCol = collection(db, 'teams', TEAM_ID, 'expenses');
-    const billsCol = collection(db, 'teams', TEAM_ID, 'bills');
-    const logsCol = collection(db, 'teams', TEAM_ID, 'logs');
-
     const masterDataConfig = {
         'projects': { collection: projectsCol, stateKey: 'projects', nameField: 'projectName', title: 'Proyek' },
         'clients': { collection: clientsCol, stateKey: 'clients', nameField: 'clientName', title: 'Klien' },
@@ -326,124 +338,91 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         setTimeout(() => modalEl.remove(), 300); 
     }
 
-    let pendingUsersUnsub = null;
-    async function listenForPendingUsers() {
-        if (pendingUsersUnsub) pendingUsersUnsub();
-        const q = query(membersCol, where("status", "==", "pending"));
-        pendingUsersUnsub = onSnapshot(q, (snapshot) => {
-            appState.pendingUsersCount = snapshot.size;
-            renderBottomNav(); 
-        });
+    
+    // =======================================================
+    //          FUNGSI AUTH UTAMA (PERBAIKAN DENGAN LOGGING)
+    // =======================================================
+    try {
+        const redirectRes = await getRedirectResult(auth);
+        if (redirectRes && redirectRes.user) {
+            toast('success', 'Login berhasil. Menyiapkan akun...');
+        }
+    } catch (error) {
+        console.error("Error processing redirect result:", error);
+        toast('error', `Login gagal: ${error.message}`);
     }
 
-    onAuthStateChanged(auth, async (user) => {
-        if (appState.roleUnsub) appState.roleUnsub();
+    onAuthStateChanged(auth, (user) => {
+        console.log('Auth state changed. User present:', !!user);
+        if (roleUnsub) { roleUnsub(); roleUnsub = null; }
         if (pendingUsersUnsub) { pendingUsersUnsub(); pendingUsersUnsub = null; }
-    
+
         if (user) {
-            appState.currentUser = user;
-            const userDocRef = doc(membersCol, user.uid);
-    
-            try {
-                const docSnap = await getDoc(userDocRef);
-    
-                if (!docSnap.exists()) {
-                    const userName = user.displayName || user.email.split('@')[0];
-                    const isOwner = user.email === OWNER_EMAIL;
-                    const initialData = {
-                        email: user.email,
-                        name: userName,
-                        photoURL: user.photoURL,
-                        role: isOwner ? 'Owner' : 'Viewer',
-                        status: isOwner ? 'active' : 'pending',
-                        createdAt: serverTimestamp()
-                    };
-    
-                    await setDoc(userDocRef, initialData);
-                    
-                    appState.userRole = initialData.role;
-                    appState.userStatus = initialData.status;
-    
-                    if (appState.justLoggedIn) {
-                        toast('info', 'Akun Anda berhasil dibuat & menunggu persetujuan.');
-                    }
-                    
-                    attachRoleListener(userDocRef);
-                    
-                    $('#global-loader').style.display = 'none';
-                    $('#app-shell').style.display = 'flex';
-                    renderUI();
-                    appState.justLoggedIn = false;
-    
-                } else {
-                    attachRoleListener(userDocRef);
-                }
-            } catch (error) {
-                console.error("Error saat memeriksa atau membuat dokumen pengguna:", error);
-                if (error.code === 'permission-denied') {
-                    toast('error', 'Akses ditolak. Periksa Firestore Security Rules Anda.');
-                } else {
-                    toast('error', 'Gagal memverifikasi data pengguna.');
-                }
-                handleLogout();
-            }
-    
+            lastAuthUid = user.uid;
+            suppressGuestUntil = Date.now() + 4000; // tahan null event sesaat setelah login
+            if (isInitializingSession) return;
+            isInitializingSession = true;
+            Promise.resolve(initializeAppSession(user)).finally(() => { isInitializingSession = false; });
         } else {
-            Object.assign(appState, { currentUser: null, userRole: 'Guest', userStatus: null, justLoggedIn: false, pendingUsersCount: 0 });
+            // Jika sedang proses login atau dalam masa suppress, jangan flicker ke halaman login
+            if (isSignInInProgress || sessionStorage.getItem('isSigningIn') === 'true' || Date.now() < suppressGuestUntil) {
+                console.log('Auth null ignored during sign-in or suppress window');
+                return; // tunggu event berikutnya
+            }
+            lastAuthUid = null;
+            Object.assign(appState, { currentUser: null, userRole: 'Guest', userStatus: null, justLoggedIn: false });
             $('#global-loader').style.display = 'none';
             $('#app-shell').style.display = 'flex';
             renderUI();
         }
     });
+
     
-    function attachRoleListener(userDocRef) {
-        appState.roleUnsub = onSnapshot(userDocRef, (docSnap) => {
-            if (!docSnap.exists()) {
-                console.warn("Dokumen pengguna dihapus, melakukan logout.");
-                toast('error', 'Data akun Anda tidak ditemukan. Silakan login kembali.');
-                handleLogout();
-                return;
-            }
     
-            const { role = 'Guest', status = 'pending' } = docSnap.data();
-            
-            if (appState.justLoggedIn) {
-                if (status === 'active') toast('success', `Selamat datang, ${docSnap.data().name}!`);
-                else if (status === 'pending') toast('info', 'Akun Anda masih menunggu persetujuan.');
-            }
-            
-            const hasStateChanged = appState.userRole !== role || appState.userStatus !== status;
-            Object.assign(appState, { userRole: role, userStatus: status });
-    
-            if (role === 'Owner') listenForPendingUsers();
-            
-            if (appState.justLoggedIn || hasStateChanged) {
-                $('#global-loader').style.display = 'none';
-                $('#app-shell').style.display = 'flex';
-                renderUI();
-            }
-            appState.justLoggedIn = false;
-        }, (error) => {
-            console.error("Role listener error:", error);
-            toast('error', 'Gagal memuat data peran. Mencoba keluar...');
-            handleLogout();
-        });
-    }
-        
     async function signInWithGoogle() { 
-        closeModal($('#login-modal'));
-        toast('syncing', 'Mengarahkan ke halaman login...'); 
-        try { 
-            appState.justLoggedIn = true;
-            await signInWithRedirect(auth, new GoogleAuthProvider()); 
-        } catch (error) { 
-            toast('error', `Login gagal.`); 
-            appState.justLoggedIn = false;
-        } 
+        const provider = new GoogleAuthProvider();
+        if (isSignInInProgress) return;
+        isSignInInProgress = true;
+        const btn = document.getElementById('google-login-btn');
+        if (btn) btn.setAttribute('disabled', 'true');
+        sessionStorage.setItem('isSigningIn', 'true');
+        try {
+            // Beberapa Android/WebView lebih stabil dengan redirect
+            const FORCE_REDIRECT = /Android/i.test(navigator.userAgent) || window.matchMedia('(display-mode: standalone)').matches;
+            if (FORCE_REDIRECT) {
+                toast('syncing', 'Mengarahkan ke halaman login...');
+                await signInWithRedirect(auth, provider);
+                return; // akan dialihkan, tidak lanjut
+            }
+            await signInWithPopup(auth, provider);
+            toast('success', 'Login berhasil. Menyiapkan akun...');
+        } catch (err) {
+            // Jika popup dibatalkan/ada permintaan lain, biarkan alur onAuthStateChanged yang menangani
+            if (err && err.code === 'auth/cancelled-popup-request') {
+                console.warn('Popup dibatalkan karena ada operasi lain. Menunggu status auth...');
+            } else if (err && (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment')) {
+                try {
+                    toast('syncing', 'Mengarahkan ke halaman login...');
+                    await signInWithRedirect(auth, provider);
+                    return; // halaman akan berpindah
+                } catch (err2) {
+                    console.error('Redirect sign-in failed:', err2);
+                    toast('error', 'Login gagal. Coba lagi.');
+                    sessionStorage.removeItem('isSigningIn');
+                }
+            } else {
+                console.error('Popup sign-in failed:', err);
+                toast('error', 'Login gagal. Coba lagi.');
+                sessionStorage.removeItem('isSigningIn');
+            }
+        } finally {
+            isSignInInProgress = false;
+            if (btn) btn.removeAttribute('disabled');
+        }
     }
 
     async function handleLogout() { 
-        closeModal($('#confirmLogout-modal')); 
+        if ($('#confirmLogout-modal')) closeModal($('#confirmLogout-modal'));
         toast('syncing', 'Keluar...'); 
         try { 
             await signOut(auth); 
@@ -452,16 +431,144 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             toast('error', `Gagal keluar.`); 
         } 
     }
+
+    function attachRoleListener(userDocRef) {
+        roleUnsub = onSnapshot(
+            userDocRef,
+            (docSnap) => {
+                if (docSnap.exists()) {
+                    const { role, status } = docSnap.data();
+                    if (appState.userRole !== role || appState.userStatus !== status) {
+                        Object.assign(appState, { userRole: role, userStatus: status });
+                        renderUI();
+                    }
+                } else {
+                    // Jangan logout otomatis; fallback ke status saat ini (atau owner by email)
+                    const fallbackRole = (appState.currentUser?.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() ? 'Owner' : appState.userRole || 'Viewer';
+                    const fallbackStatus = fallbackRole === 'Owner' ? 'active' : appState.userStatus || 'pending';
+                    Object.assign(appState, { userRole: fallbackRole, userStatus: fallbackStatus });
+                    renderUI();
+                    toast('error', 'Profil belum tersedia. Menggunakan pengaturan sementara.');
+                }
+            },
+            (error) => {
+                console.error('Role listener error:', error);
+                // Jangan logout saat error snapshot; gunakan state terakhir agar tidak loop
+                toast('error', 'Koneksi data bermasalah. Menggunakan data sementara.');
+                renderUI();
+            }
+        );
+    }
+
+    async function listenForPendingUsers() {
+        if (pendingUsersUnsub) pendingUsersUnsub();
+        const q = query(membersCol, where("status", "==", "pending"));
+        pendingUsersUnsub = onSnapshot(q, (snapshot) => {
+            appState.pendingUsersCount = snapshot.size;
+            renderBottomNav(); 
+        });
+    }
     
-    async function renderUI() {
+    async function initializeAppSession(user) {
+        appState.currentUser = user;
+        const userDocRef = doc(membersCol, user.uid);
+        try {
+            toast('syncing', 'Menyiapkan profil...');
+            let userDoc = await getDoc(userDocRef);
+
+            if (!userDoc.exists()) {
+                const userName = user.displayName || user.email.split('@')[0];
+                const isOwner = user.email.toLowerCase() === OWNER_EMAIL.toLowerCase();
+                const initialData = {
+                    email: user.email, name: userName, photoURL: user.photoURL,
+                    role: isOwner ? 'Owner' : 'Viewer', status: isOwner ? 'active' : 'pending',
+                    createdAt: serverTimestamp()
+                };
+                await setDoc(userDocRef, initialData);
+                userDoc = await getDoc(userDocRef); 
+            }
+            
+            const userData = userDoc.data();
+            const { role = 'Guest', status = 'pending' } = userData;
+            Object.assign(appState, { userRole: role, userStatus: status });
+            
+            if (appState.justLoggedIn) {
+                if (status === 'active') toast('success', `Selamat datang kembali, ${userData.name}!`);
+                else toast('info', 'Akun Anda dibuat & menunggu persetujuan.');
+            }
+
+            attachRoleListener(userDocRef);
+            if (appState.userRole === 'Owner') listenForPendingUsers();
+
+            $('#global-loader').style.display = 'none';
+            $('#app-shell').style.display = 'flex';
+            renderUI();
+            // Tutup modal login jika masih terbuka
+            const loginModal = document.getElementById('login-modal');
+            if (loginModal) closeModal(loginModal);
+            appState.justLoggedIn = false;
+            hideToast();
+            sessionStorage.removeItem('isSigningIn');
+        } catch (error) {
+            console.error("CRITICAL ERROR during session initialization.", error);
+            // Jangan paksa logout; fallback agar tidak loop login
+            const isOwner = (user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
+            Object.assign(appState, { userRole: isOwner ? 'Owner' : 'Viewer', userStatus: isOwner ? 'active' : 'pending' });
+            $('#global-loader').style.display = 'none';
+            $('#app-shell').style.display = 'flex';
+            renderUI();
+            toast('error', 'Gagal memuat profil. Menggunakan mode terbatas.');
+            sessionStorage.removeItem('isSigningIn');
+        }
+    }
+    
+    function renderUI() {
         updateHeaderTitle();
         renderBottomNav();
         updateNavActiveState();
-        if (!appState.currentUser) { renderGuestLanding(); return; }
-        if (appState.userStatus !== 'active') { renderPendingLanding(); return; }
-        await renderPageContent();
+        if (!appState.currentUser) {
+            renderGuestLanding();
+            return;
+        }
+        if (appState.userStatus !== 'active') {
+            renderPendingLanding();
+            return;
+        }
+        renderPageContent();
     }
     
+    function updateHeaderTitle() {
+        const pageTitleEl = $('#header-page-title');
+        if (!pageTitleEl) return;
+        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
+        pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
+    }
+
+    function renderBottomNav() {
+        const nav = $('#bottom-nav');
+        if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
+
+        let navIdsToShow = [];
+        if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
+        else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
+        else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
+        
+        const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
+        
+        nav.innerHTML = accessibleLinks.map(item => `
+            <button class="nav-item" data-action="navigate" data-nav="${item.id}" aria-label="${item.label}">
+                ${item.id === 'pengaturan' && appState.userRole === 'Owner' && appState.pendingUsersCount > 0 ? `<span class="notification-badge">${appState.pendingUsersCount}</span>` : ''}
+                <span class="material-symbols-outlined">${item.icon}</span>
+                <span class="nav-text">${item.label}</span>
+            </button>
+        `).join('');
+    }
+
+    function updateNavActiveState() {
+        $$('.nav-item').forEach(item => item.classList.remove('active'));
+        $$(`.nav-item[data-nav="${appState.activePage}"]`).forEach(el => el.classList.add('active'));
+    }
+
     function renderGuestLanding() {
         $('#bottom-nav').innerHTML = '';
         $('.page-container').innerHTML = `<div class="card card-pad" style="max-width:520px;margin:2rem auto;text-align:center;"><h4>Selamat Datang</h4><p>Masuk untuk melanjutkan.</p><button class="btn btn-primary" data-action="auth-action">Masuk dengan Google</button></div>`;
@@ -496,17 +603,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         }
     }
     
-    const ALL_NAV_LINKS = [
-        { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', roles: ['Owner', 'Editor', 'Viewer'] },
-        { id: 'pemasukan', icon: 'account_balance_wallet', label: 'Pemasukan', roles: ['Owner'] },
-        { id: 'pengeluaran', icon: 'post_add', label: 'Pengeluaran', roles: ['Owner', 'Editor'] },
-        { id: 'absensi', icon: 'person_check', label: 'Absensi', roles: ['Owner', 'Editor'] },
-        { id: 'stok', icon: 'inventory_2', label: 'Stok', roles: ['Owner', 'Editor', 'Viewer'] },
-        { id: 'tagihan', icon: 'receipt_long', label: 'Tagihan', roles: ['Owner', 'Editor', 'Viewer'] },
-        { id: 'laporan', icon: 'monitoring', label: 'Laporan', roles: ['Owner', 'Viewer'] },
-        { id: 'pengaturan', icon: 'settings', label: 'Pengaturan', roles: ['Owner', 'Editor', 'Viewer'] },
-    ];
-
     function updateHeaderTitle() {
         const pageTitleEl = $('#header-page-title');
         if (!pageTitleEl) return;
@@ -514,31 +610,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
         const pageName = currentPageLink ? currentPageLink.label : 'Halaman';
         pageTitleEl.textContent = pageName;
-    }
-
-    function renderBottomNav() {
-        const nav = $('#bottom-nav');
-        if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
-
-        let navIdsToShow = [];
-        if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
-        else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
-        else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
-        
-        const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
-        
-        nav.innerHTML = accessibleLinks.map(item => `
-            <button class="nav-item" data-action="navigate" data-nav="${item.id}" aria-label="${item.label}">
-                ${item.id === 'pengaturan' && appState.userRole === 'Owner' && appState.pendingUsersCount > 0 ? `<span class="notification-badge">${appState.pendingUsersCount}</span>` : ''}
-                <span class="material-symbols-outlined">${item.icon}</span>
-                <span class="nav-text">${item.label}</span>
-            </button>
-        `).join('');
-    }
-    
-    function updateNavActiveState() {
-        $$('.nav-item').forEach(item => item.classList.remove('active'));
-        $$(`.nav-item[data-nav="${appState.activePage}"]`).forEach(el => el.classList.add('active'));
     }
 
     const fetchData = async (key, col, order = 'createdAt') => {
@@ -562,7 +633,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         ]);
         
         // 2. Lakukan Kalkulasi
-        // Kalkulasi Laba & Tagihan
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
         const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
@@ -575,7 +645,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         const labaBersih = labaKotor - bebanOperasional - bebanInternal;
         const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
     
-        // Kalkulasi Anggaran Proyek
         const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
             const actual = appState.expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
             const remaining = p.budget - actual;
@@ -583,7 +652,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             return { ...p, actual, remaining, percentage };
         });
     
-        // Kalkulasi Rekap Harian
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todaysExpenses = appState.expenses.filter(e => e.date.toDate() >= today);
@@ -594,8 +662,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             return recap;
         }, {});
     
-        // 3. Buat Komponen HTML
-        // Kartu Saldo Utama
         const balanceCardsHTML = `
             <div class="dashboard-balance-grid">
                 <div class="dashboard-balance-card">
@@ -608,7 +674,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 </div>
             </div>`;
     
-        // Kartu Anggaran Proyek
         const projectBudgetHTML = `
             <h5 class="section-title-owner">Sisa Anggaran Proyek</h5>
             <div class="card card-pad">
@@ -629,7 +694,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 `).join('') : '<p class="empty-state-small">Tidak ada proyek dengan anggaran.</p>'}
             </div>`;
     
-        // Kartu Rekap Harian
         const dailyRecapHTML = `
              <h5 class="section-title-owner">Rekap Pengeluaran Hari Ini</h5>
              <div class="card card-pad">
@@ -641,7 +705,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 `).join('') : '<p class="empty-state-small">Tidak ada pengeluaran hari ini.</p>'}
              </div>`;
     
-        // Tombol Aksi Cepat
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
         const quickActionsHTML = `
             <h5 class="section-title-owner">Aksi Cepat</h5>
@@ -654,7 +717,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 `).join('')}
             </div>`;
     
-        // 4. Gabungkan dan Render
         container.innerHTML = balanceCardsHTML + projectBudgetHTML + dailyRecapHTML + quickActionsHTML;
     }
 
@@ -1358,7 +1420,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 deliveryOrderUrl: ''
             });
     
-            // [REVISI] Menggunakan antrian offline jika tidak ada koneksi
             if (!appState.isOnline) {
                 const offlineRecord = {
                     type: `add-expenses`,
@@ -1596,11 +1657,11 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         
         toast('syncing', `Menambah ${config.title}...`);
         try {
-            const newDocRef = doc(config.collection); // [FIX] Generate ref before transaction
+            const newDocRef = doc(config.collection);
             if (type === 'projects' && dataToAdd.projectType === 'main_income') {
                 await runTransaction(db, async (transaction) => {
                     const q = query(projectsCol, where("projectType", "==", "main_income"));
-                    const mainProjectsSnap = await getDocs(q); // Use getDocs, not transaction.get
+                    const mainProjectsSnap = await getDocs(q); 
                     mainProjectsSnap.forEach(doc => transaction.update(doc.ref, { projectType: 'internal_expense' }));
                     transaction.set(newDocRef, dataToAdd);
                 });
@@ -1718,7 +1779,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             if (type === 'projects' && dataToUpdate.projectType === 'main_income') {
                 await runTransaction(db, async (transaction) => {
                     const q = query(projectsCol, where("projectType", "==", "main_income"));
-                    const mainProjectsSnap = await getDocs(q); // Use getDocs
+                    const mainProjectsSnap = await getDocs(q);
                     mainProjectsSnap.forEach(docSnap => {
                         if (docSnap.id !== id) transaction.update(docSnap.ref, { projectType: 'internal_expense' });
                     });
@@ -2124,7 +2185,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         $('#invoice-total-amount').textContent = fmtIDR(totalAmount);
     }
     
-    // [REVISI] Fungsi upload file dengan notifikasi dan kompresi
     async function _uploadFileInBackground(docId, fieldToUpdate, file, collectionName = 'expenses') {
         try {
             toast('syncing', `Mengupload ${file.name}...`, 999999);
@@ -2187,10 +2247,9 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     // =======================================================
-    //         [REVISI] INISIALISASI & EVENT LISTENER UTAMA
+    //         INISIALISASI & EVENT LISTENER UTAMA
     // =======================================================
     function init() {
-        // --- [BARU] Logika untuk Swipe Navigasi ---
         let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
 
         function handleSwipeGesture() {
@@ -2228,7 +2287,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         document.body.addEventListener('touchstart', e => { touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY; }, { passive: true });
         document.body.addEventListener('touchend', e => { touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY; handleSwipeGesture(); }, { passive: true });
 
-        // --- Event Listener Utama (click) ---
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
                 $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
@@ -2305,7 +2363,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
                 case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
                 case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
-                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break; // [REVISI] Menggunakan dataset
+                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
                 case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
                 case 'download-report': _handleDownloadReport('pdf'); break;
                 case 'download-csv': _handleDownloadReport('csv'); break;
@@ -2371,7 +2429,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         `;
     }
 
-    // [REVISI] Fungsi untuk menampilkan detail tagihan dengan tombol upload
     async function _createBillDetailContentHTML(bill, expenseData) {
         const remainingAmount = bill ? (bill.amount || 0) - (bill.paidAmount || 0) : 0;
         
@@ -2434,7 +2491,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         `;
     }
     
-    // [REVISI] Fungsi untuk menangani penghapusan lampiran
     async function handleDeleteAttachment(dataset) {
         const { id, field } = dataset;
         const docRef = doc(expensesCol, id);
@@ -2457,7 +2513,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                     
                     toast('success', 'Lampiran berhasil dihapus.');
                     closeModal($('#dataDetail-modal'));
-                    handleOpenBillDetail(null, id); // Refresh modal
+                    handleOpenBillDetail(null, id);
                 } catch(error) {
                     toast('error', 'Gagal menghapus lampiran.');
                     console.error("Attachment deletion error:", error);
@@ -2466,12 +2522,11 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         });
     }
 
-    // [REVISI] Fungsi untuk menangani upload dari detail tagihan
     function handleUploadAttachment(dataset) {
         const { id, field } = dataset;
         const uploader = $('#attachment-uploader');
         if (!uploader) return;
-        uploader.value = ''; // Reset input file
+        uploader.value = '';
 
         uploader.onchange = async (e) => {
             const file = e.target.files[0];
@@ -2479,7 +2534,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             
             await _uploadFileInBackground(id, field, file, 'expenses');
             
-            // Render ulang detail modal untuk menampilkan gambar baru
             closeModal($('#dataDetail-modal'));
             handleOpenBillDetail(null, id);
         };
@@ -3275,7 +3329,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 ? `<h5 class="detail-section-title" style="margin-top: 0;">Menunggu Persetujuan</h5>${pendingUsers.map(createUserHTML).join('')}`
                 : '';
         
-            const otherUsersSorted = otherUsers.sort((a, b) => (a.role === 'Owner' ? -1 : 1)); // Owner selalu di atas
+            const otherUsersSorted = otherUsers.sort((a, b) => (a.role === 'Owner' ? -1 : 1));
             const otherUsersHTML = otherUsers.length > 0
                 ? `<h5 class="detail-section-title" style="${pendingUsers.length > 0 ? '' : 'margin-top: 0;'}">Pengguna Terdaftar</h5>${otherUsersSorted.map(createUserHTML).join('')}`
                 : '';
@@ -3718,7 +3772,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         container.innerHTML = `<div class="log-container">${logHTML}</div>`;
     }
 
-    // [REVISI] SINKRONISASI OFFLINE YANG LEBIH BAIK
     async function syncOfflineData() {
         if (appState.isSyncing || !appState.isOnline) return;
 
@@ -3779,6 +3832,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         }
     }
     
-    // Pindahkan pemanggilan init() ke dalam listener
     init();
-});
+}
+
+main();

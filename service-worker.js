@@ -1,4 +1,4 @@
-const CACHE_NAME = 'banplex-cache-v13'; // Versi cache dinaikkan untuk memicu update
+const CACHE_NAME = 'banplex-cache-v15'; // Versi cache dinaikkan untuk memicu update
 // [DIUBAH] Menggunakan jalur relatif untuk semua aset lokal
 const urlsToCache = [
   './',
@@ -37,25 +37,30 @@ self.addEventListener('activate', event => {
 
 // [DIUBAH] Event 'fetch': Menerapkan strategi "Stale-While-Revalidate" untuk pengalaman offline yang cepat
 self.addEventListener('fetch', event => {
-  // Abaikan request non-GET dan request ke Firebase
-  if (event.request.method !== 'GET' || event.request.url.includes('firestore.googleapis.com')) {
-    return;
-  }
+  const req = event.request;
+  const url = new URL(req.url);
 
-  event.respondWith(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.match(event.request).then(cachedResponse => {
-        const fetchPromise = fetch(event.request).then(networkResponse => {
-          // Jika berhasil dari jaringan, update cache
-          cache.put(event.request, networkResponse.clone());
-          return networkResponse;
-        });
+  // Hanya tangani request GET ke origin sendiri. Biarkan pihak ketiga (Google/Firebase) lewat.
+  if (req.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
+  // Hindari bug only-if-cached untuk request non-same-origin
+  if (req.cache === 'only-if-cached' && req.mode !== 'same-origin') return;
 
-        // Kembalikan dari cache jika ada, sambil tetap mengambil versi baru dari jaringan
-        return cachedResponse || fetchPromise;
-      });
-    })
-  );
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(req);
+    try {
+      const resp = await fetch(req);
+      // Hanya cache response yang OK dan same-origin/basic
+      if (resp && resp.ok && (resp.type === 'basic' || resp.type === 'default')) {
+        cache.put(req, resp.clone()).catch(() => {}); // jangan biarkan reject bocor
+      }
+      return cached || resp;
+    } catch (e) {
+      // Network gagal: fallback ke cache jika ada
+      return cached || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+    }
+  })());
 });
 
 // [BARU] Menerima pesan dari client untuk mengaktifkan service worker baru
