@@ -134,7 +134,65 @@ async function main() {
     const parseFormattedNumber = (str) => Number(String(str).replace(/[^0-9]/g, ''));
     const isViewer = () => appState.userRole === 'Viewer';
     
-    function toast(type, message, duration = 3000) {
+    // Form draft persistence (to avoid losing inputs when opening modals or navigating)
+    function _getFormDraftKey(form) {
+        const k = form.getAttribute('data-draft-key');
+        return k ? `draft:${k}` : null;
+    }
+    function _saveFormDraft(form) {
+        try {
+            const key = _getFormDraftKey(form);
+            if (!key) return;
+            const data = {};
+            form.querySelectorAll('input, select, textarea').forEach(el => {
+                if (el.type === 'file') return; // cannot persist files
+                const name = el.name || el.id;
+                if (!name) return;
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    if (el.checked) data[name] = el.value || true;
+                } else {
+                    data[name] = el.value;
+                }
+            });
+            sessionStorage.setItem(key, JSON.stringify(data));
+        } catch (e) { /* ignore */ }
+    }
+    function _restoreFormDraft(form) {
+        try {
+            const key = _getFormDraftKey(form);
+            if (!key) return;
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            Object.entries(data).forEach(([name, val]) => {
+                const el = form.querySelector(`[name="${name}"]`) || form.querySelector(`#${name}`);
+                if (!el) return;
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    const candidate = form.querySelector(`[name="${name}"][value="${val}"]`);
+                    if (candidate) candidate.checked = true;
+                } else {
+                    el.value = val;
+                }
+            });
+        } catch (e) { /* ignore */ }
+    }
+    function _clearFormDraft(form) {
+        try {
+            const key = _getFormDraftKey(form);
+            if (key) sessionStorage.removeItem(key);
+        } catch (e) { /* ignore */ }
+    }
+    function _attachFormDraftPersistence(form) {
+        if (!form) return;
+        _restoreFormDraft(form);
+        const handler = () => _saveFormDraft(form);
+        form.addEventListener('input', handler);
+        form.addEventListener('change', handler, true);
+        // Cleanup helper on element for explicit clear on successful submit
+        form._clearDraft = () => _clearFormDraft(form);
+    }
+    
+    function toast(type, message, duration = 5000) {
         const container = $('#popup-container');
         if (!container) return;
 
@@ -162,14 +220,15 @@ async function main() {
         // clear previous timer if any
         if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; }
 
-        if (['offline', 'online', 'syncing'].includes(type)) {
+        if (type === 'syncing') {
             iconEl.className = 'spinner';
             container.classList.add('show');
         } else {
             iconEl.className = 'material-symbols-outlined';
             iconEl.textContent = icons[type] || 'info';
             container.classList.add('show');
-            toastTimeout = setTimeout(() => container.classList.remove('show'), duration);
+            const hideIn = (type === 'offline' || type === 'online') ? 5000 : duration;
+            toastTimeout = setTimeout(() => container.classList.remove('show'), hideIn);
         }
     }
     const hideToast = () => { if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; } const el = $('#popup-container'); if (el) el.classList.remove('show'); };
@@ -379,8 +438,26 @@ function attachModalEventListeners(type, data, closeModalFunc) {
 
     
     
+    function _isAndroidInAppBrowser() {
+        const ua = navigator.userAgent || '';
+        const isAndroid = /Android/i.test(ua);
+        const isWebView = /; wv\)/i.test(ua) || /Version\/\d+\.\d+ Chrome\/.+ Mobile Safari\//i.test(ua);
+        const isIAB = /(FBAN|FBAV|FB_IAB|Instagram|Line|WhatsApp)/i.test(ua);
+        return isAndroid && (isWebView || isIAB);
+    }
+
     async function signInWithGoogle() { 
         const provider = new GoogleAuthProvider();
+        // Blokir login via in-app browser Android, arahkan ke Chrome
+        if (_isAndroidInAppBrowser()) {
+            const url = location.href.replace(/^https?:\/\//, '');
+            const intentUrl = `intent://${url}#Intent;scheme=https;package=com.android.chrome;end`;
+            toast('info', 'Buka di Chrome lalu coba login lagi.');
+            // Coba buka Chrome. Jika tidak berhasil, user bisa pilih menu ••• → Open in browser
+            try { location.href = intentUrl; } catch (_) {}
+            return;
+        }
+
         if (isSignInInProgress) return;
         isSignInInProgress = true;
         const btn = document.getElementById('google-login-btn');
@@ -517,13 +594,18 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
     
     function renderUI() {
+        const header = document.querySelector('.main-header');
+        if (!appState.currentUser) {
+            if (header) header.style.display = 'none';
+            $('#bottom-nav').innerHTML = '';
+            renderGuestLanding();
+            return;
+        } else {
+            if (header) header.style.display = '';
+        }
         updateHeaderTitle();
         renderBottomNav();
         updateNavActiveState();
-        if (!appState.currentUser) {
-            renderGuestLanding();
-            return;
-        }
         if (appState.userStatus !== 'active') {
             renderPendingLanding();
             return;
@@ -564,8 +646,19 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     }
 
     function renderGuestLanding() {
-        $('#bottom-nav').innerHTML = '';
-        $('.page-container').innerHTML = `<div class="card card-pad" style="max-width:520px;margin:2rem auto;text-align:center;"><h4>Selamat Datang</h4><p>Masuk untuk melanjutkan.</p><button class="btn btn-primary" data-action="auth-action">Masuk dengan Google</button></div>`;
+        const container = $('.page-container');
+        container.innerHTML = `
+            <div class="card card-pad" style="max-width:520px;margin:3rem auto;text-align:center;">
+                <img src="logo-main.png" alt="BanPlex" style="width:120px;height:auto;margin-bottom:1rem;" />
+                <p style="margin:.5rem 0 1rem 0">Masuk untuk melanjutkan.</p>
+                <button id="google-login-btn" class="btn btn-primary" data-action="auth-action" style="display:inline-flex;align-items:center;gap:.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12 s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C33.109,6.053,28.805,4,24,4C12.955,4,4,12.955,4,24 s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.817C14.655,16.108,18.961,13,24,13c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657 C33.109,6.053,28.805,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.191-5.238C29.211,35.091,26.715,36,24,36 c-5.202,0-9.619-3.317-11.283-7.957l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.793,2.239-2.231,4.166-4.094,5.57 c0.001-0.001,0.002-0.001,0.003-0.002l6.191,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+                    <span>Masuk dengan Google</span>
+                </button>
+            </div>`;
+        // Pastikan listener terpasang pada tombol baru
+        const googleLoginBtn = $('#google-login-btn');
+        if (googleLoginBtn) googleLoginBtn.addEventListener('click', signInWithGoogle);
     }
     
     function renderPendingLanding() {
@@ -658,11 +751,11 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     
         const balanceCardsHTML = `
             <div class="dashboard-balance-grid">
-                <div class="dashboard-balance-card">
+                <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="laporan">
                     <span class="label">Estimasi Laba Bersih</span>
                     <strong class="value positive">${fmtIDR(labaBersih)}</strong>
                 </div>
-                <div class="dashboard-balance-card">
+                <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="tagihan">
                     <span class="label">Tagihan Belum Lunas</span>
                     <strong class="value negative">${fmtIDR(totalUnpaid)}</strong>
                 </div>
@@ -782,7 +875,14 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             }
             
             contentContainer.innerHTML = (isViewer() ? '' : formHTML) + listHTML;
-            if (!isViewer()) _attachPemasukanFormListeners();
+            if (!isViewer()) {
+                const formEl = $('#pemasukan-form');
+                if (formEl) {
+                    formEl.setAttribute('data-draft-key', `pemasukan-${tabId}`);
+                    _attachFormDraftPersistence(formEl);
+                }
+                _attachPemasukanFormListeners();
+            }
             await _rerenderPemasukanList(tabId);
         }
 
@@ -1091,6 +1191,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             }
             toast('success', 'Data berhasil disimpan!');
             form.reset();
+            if (form && typeof form._clearDraft === 'function') form._clearDraft();
             $$('.custom-select-trigger span:first-child', form).forEach(s => s.textContent = 'Pilih...');
             const loanCalcResult = $('#loan-calculation-result', form);
             if(loanCalcResult) loanCalcResult.style.display = 'none';
@@ -1277,7 +1378,14 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             }
     
             contentContainer.innerHTML = (isViewer() ? '' : formHTML) + `<div id="pengeluaran-list-container"></div>`;
-            if(!isViewer()) _attachPengeluaranFormListeners(tabId);
+            if(!isViewer()) {
+                const formEl = $('#pengeluaran-form');
+                if (formEl) {
+                    formEl.setAttribute('data-draft-key', `pengeluaran-${tabId}`);
+                    _attachFormDraftPersistence(formEl);
+                }
+                _attachPengeluaranFormListeners(tabId);
+            }
             _rerenderPengeluaranList(tabId);
         }
     
@@ -1449,6 +1557,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             
             const currentSubPage = appState.activeSubPage.get('pengeluaran');
             form.reset();
+            if (form && typeof form._clearDraft === 'function') form._clearDraft();
             _initCustomSelects(form);
              $$('.custom-select-trigger span:first-child', form).forEach(s => s.textContent = 'Pilih...');
             if(expenseData.type === 'material') {
@@ -1483,6 +1592,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             const supplier = appState.suppliers.find(s => s.id === item.supplierId);
             return supplier ? supplier.supplierName : 'Tidak Diketahui';
         };
+        if (type === 'material') { try { _prefetchExpenseThumbnails(expenses); } catch (e) {} }
     
         listContainer.innerHTML = `
             <div style="margin-top: 1.5rem;">
@@ -2245,6 +2355,11 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     // =======================================================
     function init() {
         let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
+        // Pull-to-refresh state
+        const ptrEl = document.getElementById('ptr');
+        const pageContainer = document.querySelector('.page-container');
+        const PTR_THRESHOLD = 70, PTR_MAX = 140;
+        let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
 
         function handleSwipeGesture() {
             const deltaX = touchendX - touchstartX;
@@ -2278,8 +2393,72 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             }
         }
 
-        document.body.addEventListener('touchstart', e => { touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY; }, { passive: true });
-        document.body.addEventListener('touchend', e => { touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY; handleSwipeGesture(); }, { passive: true });
+        function resetPTR(animated = true) {
+            ptrPull = 0; ptrActive = false; ptrArmed = false;
+            if (ptrEl) {
+                if (!animated) ptrEl.style.transition = 'none';
+                ptrEl.style.transform = `translateY(0)`;
+                // force reflow
+                void ptrEl.offsetHeight;
+                ptrEl.style.transition = '';
+                ptrEl.classList.remove('ptr-ready');
+            }
+            if (pageContainer) {
+                if (!animated) pageContainer.style.transition = 'none';
+                pageContainer.style.transform = '';
+                void pageContainer.offsetHeight;
+                pageContainer.style.transition = '';
+            }
+        }
+
+        async function performPTRRefresh() {
+            try {
+                toast('syncing', 'Memuat...');
+                await Promise.resolve(syncOfflineData?.());
+                // Refresh targeted pages with fresh content
+                if (appState.activePage === 'dashboard') await renderDashboardPage();
+                else if (appState.activePage === 'tagihan') await renderTagihanPage();
+                else if (appState.activePage === 'laporan') await renderLaporanPage();
+                else renderPageContent();
+            } finally {
+                hideToast();
+                resetPTR();
+            }
+        }
+
+        document.body.addEventListener('touchstart', e => {
+            touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY;
+            const scroller = pageContainer || document.scrollingElement;
+            const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
+            ptrArmed = atTop; ptrActive = false; ptrPull = 0;
+        }, { passive: true });
+
+        document.body.addEventListener('touchmove', e => {
+            const y = e.changedTouches[0].screenY; const x = e.changedTouches[0].screenX;
+            const dy = y - touchstartY; const dx = x - touchstartX;
+            // Only handle when pulling down from top and vertical intent
+            if (!ptrArmed || dy <= 0 || Math.abs(dy) < Math.abs(dx)) return;
+            // prevent native refresh
+            e.preventDefault();
+            ptrActive = true; ptrPull = Math.min(PTR_MAX, dy * 0.6);
+            if (ptrEl) {
+                ptrEl.style.transform = `translateY(${Math.max(0, ptrPull - 60)}px)`;
+                if (ptrPull >= PTR_THRESHOLD) ptrEl.classList.add('ptr-ready'); else ptrEl.classList.remove('ptr-ready');
+            }
+            if (pageContainer) pageContainer.style.transform = `translateY(${ptrPull}px)`;
+        }, { passive: false });
+
+        document.body.addEventListener('touchend', e => {
+            touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY;
+            if (ptrActive && ptrPull >= PTR_THRESHOLD) {
+                // Lock in place briefly
+                if (pageContainer) pageContainer.style.transform = `translateY(56px)`;
+                performPTRRefresh();
+                return;
+            }
+            resetPTR();
+            handleSwipeGesture();
+        }, { passive: false });
 
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
@@ -2358,13 +2537,14 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
                 case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
                 case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
+                case 'download-attachment': _downloadAttachment(actionTarget.dataset.url, actionTarget.dataset.filename); break;
                 case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
                 case 'download-report': _handleDownloadReport('pdf'); break;
                 case 'download-csv': _handleDownloadReport('csv'); break;
             }
         });
 
-        window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online', 2000); syncOfflineData(); });
+        window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online'); syncOfflineData(); });
         window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
         if (!navigator.onLine) toast('offline', 'Anda sedang offline');
     }
@@ -2448,6 +2628,8 @@ function attachModalEventListeners(type, data, closeModalFunc) {
                 <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
                 <span>${label}</span>
                 <div class="attachment-actions">
+                    <button class="btn-icon" data-action="download-attachment" data-url="${url}" data-filename="${label.replace(/\s+/g,'_')}.jpg" title="Unduh"><span class="material-symbols-outlined">download</span></button>
+                    ${isViewer() ? '' : `<button class="btn-icon" data-action="upload-attachment" data-id="${expenseData.id}" data-field="${field}" title="Ganti"><span class="material-symbols-outlined">edit</span></button>`}
                     ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${expenseData.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
                 </div>
             </div>`;
@@ -2463,14 +2645,14 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             }
         }
 
-        const attachmentsHTML = `
+        const attachmentsHTML = (expenseData.type === 'material') ? `
             <h5 class="detail-section-title">Lampiran</h5>
             <div class="attachment-gallery">
                 ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
                 ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
             </div>
             ${uploadButtonHTML ? `<div class="rekap-actions" style="grid-template-columns: 1fr 1fr; margin-top: 1rem;">${uploadButtonHTML}</div>` : ''}
-        `;
+        ` : '';
         
         return `
             <div class="payment-summary">
@@ -2483,6 +2665,45 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             ${itemsHTML}
             ${attachmentsHTML}
         `;
+        if (type === 'material') { try { _injectExpenseThumbnails(expenses); } catch (e) {} }
+    }
+
+    function _injectExpenseThumbnails(expenses) {
+        try {
+            const mapById = new Map(expenses.map(e => [e.id, e]));
+            $$('.card.card-list-item[data-type="expense"]').forEach(card => {
+                const id = card.getAttribute('data-id');
+                const item = mapById.get(id);
+                if (!item || item.type !== 'material') return;
+                const url = item.invoiceUrl || item.deliveryOrderUrl;
+                const content = $('.card-list-item-content', card);
+                const details = $('.card-list-item-details', card);
+                const amount = $('.card-list-item-amount-wrapper', card);
+                if (!content || !details || !amount) return;
+                if ($('.card-left', content)) return;
+                const left = document.createElement('div');
+                left.className = 'card-left';
+                if (url) {
+                    const img = document.createElement('img');
+                    img.className = 'expense-thumb';
+                    img.alt = 'Lampiran';
+                    img.src = url;
+                    left.appendChild(img);
+                }
+                left.appendChild(details);
+                content.insertBefore(left, amount);
+            });
+        } catch (err) {
+            console.warn('Failed to inject thumbnails', err);
+        }
+    }
+
+    async function _prefetchExpenseThumbnails(expenses) {
+        try {
+            const urls = Array.from(new Set(expenses.flatMap(e => [e.invoiceUrl, e.deliveryOrderUrl].filter(Boolean))));
+            if (urls.length === 0) return;
+            await Promise.all(urls.map(u => fetch(u, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {})));
+        } catch (_) {}
     }
     
     async function handleDeleteAttachment(dataset) {
@@ -2532,6 +2753,24 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             handleOpenBillDetail(null, id);
         };
         uploader.click();
+    }
+
+    async function _downloadAttachment(url, filename) {
+        try {
+            const res = await fetch(url, { mode: 'cors' });
+            const blob = await res.blob();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename || 'attachment';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        } catch (e) {
+            console.error('Download attachment failed:', e);
+            // Fallback langsung buka URL
+            window.open(url, '_blank');
+        }
     }
     
     function handlePayBillModal(billId) {

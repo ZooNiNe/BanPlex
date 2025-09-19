@@ -22,7 +22,10 @@
 <body>
     <!-- [DIUBAH] Loader global yang lebih bersih tanpa teks -->
     <div id="global-loader" class="global-loader show">
-        <div class="clean-spinner"></div>
+        <div class="loader-content">
+            <img src="logo-main.png" alt="BanPlex" class="loader-logo" />
+            <div class="loader-spinner"></div>
+        </div>
     </div>
 
     <div id="app-shell" style="display: none;">
@@ -36,6 +39,11 @@
                     </div>
                 </div>
             </header>
+            <!-- Custom Pull-To-Refresh (native-like) -->
+            <div id="ptr" class="ptr" aria-hidden="true">
+                <div class="ptr-spinner"></div>
+                <div class="ptr-text">Tarik untuk memuat</div>
+            </div>
             <!-- [DIUBAH] Container utama untuk konten halaman -->
             <main id="page-container" class="page-container">
             </main>
@@ -47,8 +55,11 @@
     <div id="modal-container"></div>
     <div id="popup-container"></div>
     <div id="update-notification" class="update-notification">
-        <span>Versi baru tersedia!</span>
-        <button id="reload-app-btn">Update</button>
+        <div class="update-card">
+            <h4>Pembaruan Tersedia</h4>
+            <p>Versi baru siap dipasang. Muat ulang untuk memperbarui aplikasi.</p>
+            <button id="reload-app-btn" class="btn btn-primary">Perbarui Sekarang</button>
+        </div>
     </div>
     
     <input type="file" id="attachment-uploader" accept="image/*" class="hidden">
