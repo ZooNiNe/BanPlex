@@ -5,12 +5,14 @@
 //                       IMPORT PUSTAKA
 // =======================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-// [DIUBAH] Menambahkan getRedirectResult untuk metode login baru
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+// [DIUBAH] Menambahkan setPersistence dan browserLocalPersistence
+import { 
+    getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut,
+    setPersistence, browserLocalPersistence 
+} from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
 import { 
     getFirestore, collection, doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot,
     query, getDocs, addDoc, orderBy, deleteDoc, where, runTransaction, writeBatch, increment, Timestamp, 
-    // [DIUBAH] Mengganti enableIndexedDbPersistence dengan initializeFirestore dan persistentLocalCache
     initializeFirestore, persistentLocalCache 
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
@@ -50,13 +52,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     
-    // [DIUBAH] Cara baru untuk inisialisasi Firestore dengan mode offline (cache)
+    // [BARU] Mengatur metode penyimpanan login agar lebih andal
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+        console.log("Penyimpanan status login diatur ke lokal.");
+    } catch (error) {
+        console.error("Gagal mengatur persistensi login:", error);
+    }
+    
     let db;
     try {
         db = initializeFirestore(app, {
             cache: persistentLocalCache()
         });
-        console.log("Mode offline Firestore (modern) diaktifkan.");
+        console.log("Mode offline Firestore diaktifkan.");
     } catch (err) {
         db = getFirestore(app); // Fallback jika mode offline gagal
         if (err.code == 'failed-precondition') {
@@ -68,12 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const storage = getStorage(app);
 
-    // [BARU] Menangani hasil setelah redirect dari halaman login
     getRedirectResult(auth)
         .then((result) => {
             if (result) {
-                // Pengguna baru saja login melalui redirect.
-                // onAuthStateChanged akan menangani pembaruan UI.
                 toast('syncing', 'Login berhasil, memuat data...');
             }
         }).catch((error) => {
@@ -82,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
     const offlineDB = new Dexie('BanPlexOfflineDB');
-    offlineDB.version(2).stores({ // Versi ditingkatkan untuk mendukung file
+    offlineDB.version(2).stores({ 
         offlineQueue: '++id, type, payload',
         offlineFiles: '++id, parentId, field, file'
     });
@@ -97,12 +103,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isViewer = () => appState.userRole === 'Viewer';
     let popupTimeout;
     
-    // Fungsi Toast yang sudah diperbaiki
     let toastTimeout;
     function toast(type, message, duration = 3000) {
         clearTimeout(toastTimeout);
         const container = $('#popup-container');
-        if (!container) return;
+        if (!container) return; 
 
         if (!container.querySelector('.popup-content')) {
             container.innerHTML = `
@@ -123,7 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const icons = { success: 'check_circle', error: 'error', info: 'info' };
         
         container.className = `popup-container popup-${type}`;
-        msgEl.textContent = message;
+        msgEl.textContent = message; 
 
         if (['offline', 'online', 'syncing'].includes(type)) {
             iconEl.className = 'spinner';
@@ -422,7 +427,6 @@ function attachModalEventListeners(type, data, closeModalFunc) {
         });
     }
         
-    // [DIUBAH] Menggunakan signInWithRedirect untuk menghindari masalah Cross-Origin-Policy
     async function signInWithGoogle() { 
         closeModal($('#login-modal'));
         toast('syncing', 'Mengarahkan ke halaman login...'); 

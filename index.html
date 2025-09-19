@@ -53,12 +53,14 @@
     
     <input type="file" id="attachment-uploader" accept="image/*" class="hidden">
 
-    <!-- [DIUBAH] Skrip dipindahkan ke bawah, logika PWA disederhanakan -->
+    <!-- [BARU] Mencegah Firebase mencari file init.json -->
+    <script>window.firebaseConfig = {}</script>
+    
+    <!-- Skrip dipindahkan ke bawah, logika PWA disederhanakan -->
     <script type="module" src="script.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                // [DIUBAH] Menggunakan jalur relatif untuk registrasi service worker
                 navigator.serviceWorker.register('./service-worker.js').then(registration => {
                     console.log('ServiceWorker registration successful with scope: ', registration.scope);
                     registration.onupdatefound = () => {
@@ -91,5 +93,6 @@
             });
         }
     </script>
-    </body>
+</body>
 </html>
+
