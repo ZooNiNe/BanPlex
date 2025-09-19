@@ -45,14 +45,18 @@ service cloud.firestore {
 
     // Data anggota tim
     match /teams/main/members/{userId} {
-      // User boleh mendaftarkan diri pertama kali sebagai Viewer + pending saja
+      // Aturan untuk membuat dokumen pengguna baru
       allow create: if request.auth != null
         && request.auth.uid == userId
-        && !exists(resource.path)
         && hasOnlyAllowedMemberFields()
         && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role == 'Viewer'
-        && request.resource.data.status == 'pending';
+        && (
+          // Kasus 1: Pengguna biasa mendaftar, harus sebagai Viewer/pending
+          (request.resource.data.role == 'Viewer' && request.resource.data.status == 'pending')
+          ||
+          // Kasus 2: Owner mendaftar, diizinkan membuat akunnya sendiri sebagai Owner/active
+          (isOwnerByEmail() && request.resource.data.role == 'Owner' && request.resource.data.status == 'active')
+        );
 
       // Baca profil sendiri, atau Owner (email)
       allow read: if (request.auth != null && request.auth.uid == userId) || isOwnerByEmail();
