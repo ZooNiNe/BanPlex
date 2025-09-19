@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         db = initializeFirestore(app, {
             cache: persistentLocalCache()
         });
-        console.log("Mode offline Firestore diaktifkan.");
+        console.log("Mode offline Firestore (modern) diaktifkan.");
     } catch (err) {
         db = getFirestore(app); // Fallback jika mode offline gagal
         if (err.code == 'failed-precondition') {
@@ -97,14 +97,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isViewer = () => appState.userRole === 'Viewer';
     let popupTimeout;
     
-    // [DIUBAH] Fungsi Toast diperbaiki agar lebih andal
+    // Fungsi Toast yang sudah diperbaiki
     let toastTimeout;
     function toast(type, message, duration = 3000) {
         clearTimeout(toastTimeout);
         const container = $('#popup-container');
-        if (!container) return; // Pemeriksaan keamanan
+        if (!container) return;
 
-        // Cek apakah konten notifikasi perlu dibuat
         if (!container.querySelector('.popup-content')) {
             container.innerHTML = `
                 <div class="popup-content">
@@ -113,11 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>`;
         }
 
-        // Sekarang kita YAKIN struktur HTML sudah ada, baru kita cari elemennya
         const iconEl = $('#popup-icon', container);
         const msgEl = $('#popup-message', container);
 
-        // Pemeriksaan keamanan tambahan jika elemen tidak ditemukan
         if (!msgEl || !iconEl) {
             console.error("Elemen toast (pesan atau ikon) tidak ditemukan di dalam container.");
             return;
@@ -126,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const icons = { success: 'check_circle', error: 'error', info: 'info' };
         
         container.className = `popup-container popup-${type}`;
-        msgEl.textContent = message; // Baris ini yang sebelumnya error
+        msgEl.textContent = message;
 
         if (['offline', 'online', 'syncing'].includes(type)) {
             iconEl.className = 'spinner';
@@ -2802,7 +2799,7 @@ function attachModalEventListeners(type, data, closeModalFunc) {
             console.error(error);
         }
     }
-    
+
     async function handleEditAttendanceModal(recordId) {
         const recordRef = doc(attendanceRecordsCol, recordId);
         const recordSnap = await getDoc(recordRef);
@@ -3778,4 +3775,5 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     // Pindahkan pemanggilan init() ke dalam listener
     init();
 });
+
 
