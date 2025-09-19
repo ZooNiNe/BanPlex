@@ -20,29 +20,24 @@
     <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
 </head>
 <body>
-    <!-- [DIUBAH] Loader global yang lebih bersih tanpa teks -->
-    <div id="global-loader" class="global-loader show">
-        <div class="loader-content">
-            <img src="logo-main.png" alt="BanPlex" class="loader-logo" />
-            <div class="loader-spinner"></div>
-        </div>
+    <!-- Loader minimal tanpa logo (non-blocking) -->
+    <div id="global-loader" class="global-loader" style="display:none">
+        <div class="loader-content"><div class="loader-spinner"></div></div>
     </div>
 
     <div id="app-shell" style="display: none;">
         <div class="content-wrapper">
-            <header class="main-header">
-                <div class="header-left">
-                    <img src="logo-main.png" alt="Logo" class="brand-logo-header">
-                    <div class="header-title-container">
-                        <span class="header-app-name">BanPlex</span>
-                        <span id="header-page-title" class="header-page-name">Dashboard</span>
-                    </div>
-                </div>
-            </header>
+            <!-- Minimal page label (replace header bar) -->
+            <div class="page-label" aria-hidden="false">
+                <span class="app-name">BanPlex</span>
+                <span id="page-label-name" class="page-name">Dashboard</span>
+            </div>
             <!-- Custom Pull-To-Refresh (native-like) -->
             <div id="ptr" class="ptr" aria-hidden="true">
-                <div class="ptr-spinner"></div>
-                <div class="ptr-text">Tarik untuk memuat</div>
+                <span class="material-symbols-outlined ptr-icon" aria-hidden="true">refresh</span>
+                <div class="ptr-spinner" aria-hidden="true"></div>
+                <div class="ptr-text" id="ptr-text">Tarik untuk memuat</div>
+                <div class="ptr-time" id="ptr-time"></div>
             </div>
             <!-- [DIUBAH] Container utama untuk konten halaman -->
             <main id="page-container" class="page-container">
