@@ -796,19 +796,21 @@ async function main() {
         window.addEventListener('touchend', onEnd, { passive: true });
     }
 
-    function updateNavActiveState() {
-        try {
-            const items = $$('.nav-item');
-            if (!items || items.length === 0) return;
-            items.forEach(el => el.classList.remove('active'));
-            const current = $(`.nav-item[data-nav="${appState.activePage}"]`);
-            if (current) current.classList.add('active');
-        } catch (e) {
-            console.warn('updateNavActiveState failed:', e);
-        }
+      function updateNavActiveState() {
+          try {
+              const items = $$('.nav-item');
+              if (!items || items.length === 0) return;
+              items.forEach(el => el.classList.remove('active'));
+              const current = $(`.nav-item[data-nav="${appState.activePage}"]`);
+              if (current) current.classList.add('active');
+          } catch (e) {
+              console.warn('updateNavActiveState failed:', e);
+          }
 
-    async function renderDashboardPage() {
-        const container = $('.page-container');
+      }
+
+      async function renderDashboardPage() {
+          const container = $('.page-container');
         if (!container) return;
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
         const desiredOrder = ['tagihan','laporan','pengeluaran'];
