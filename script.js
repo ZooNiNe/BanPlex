@@ -77,15 +77,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const storage = getStorage(app);
 
-    getRedirectResult(auth)
-        .then((result) => {
-            if (result) {
-                toast('syncing', 'Login berhasil, memuat data...');
-            }
-        }).catch((error) => {
-            console.error("Error setelah redirect login:", error);
-            toast('error', `Login gagal: ${error.message}`);
-        });
+    // [DIUBAH] Tunggu hasil redirect SEBELUM memasang listener utama
+    // Ini memperbaiki masalah login di perangkat seluler
+    try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+            // Pengguna baru saja login. onAuthStateChanged akan menangani UI.
+            toast('syncing', 'Login berhasil, memuat data...');
+        }
+    } catch (error) {
+        console.error("Error setelah redirect login:", error);
+        toast('error', `Login gagal: ${error.message}`);
+    }
 
     const offlineDB = new Dexie('BanPlexOfflineDB');
     offlineDB.version(2).stores({ 
@@ -3779,5 +3782,3 @@ function attachModalEventListeners(type, data, closeModalFunc) {
     // Pindahkan pemanggilan init() ke dalam listener
     init();
 });
-
-
