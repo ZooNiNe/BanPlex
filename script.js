@@ -640,7 +640,7 @@ async function main() {
         }
         renderPageContent();
     }
-        
+
     function renderBottomNav() {
         const nav = $('#bottom-nav');
         if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
@@ -2449,7 +2449,7 @@ async function main() {
             const deltaX = touchendX - touchstartX;
             const deltaY = touchendY - touchstartY;
     
-            if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 100) return;
+            if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 200) return;
     
             const container = $('.page-container');
             const activeSubNav = container.querySelector('.sub-nav');

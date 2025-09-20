@@ -66,30 +66,28 @@
     <body>
         <script type="module" src="script.js"></script>
         <script>
-            // Pastikan Service Worker didukung oleh browser
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
-                    // 1. Daftarkan service worker
                     navigator.serviceWorker.register('./service-worker.js').then(registration => {
                         console.log('ServiceWorker registration successful');
-    
-                        // 2. Pantau jika ada pembaruan yang ditemukan
                         registration.onupdatefound = () => {
                             const installingWorker = registration.installing;
+                            if (installingWorker == null) {
+                                return;
+                            }
                             installingWorker.onstatechange = () => {
-                                // 3. Cek apakah worker baru sudah terinstal dan sedang menunggu
                                 if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    // Kondisi ini terpenuhi: ada worker baru yang siap.
-                                    // Tampilkan notifikasi pembaruan!
                                     const updateNotif = document.getElementById('update-notification');
-                                    if (updateNotif) updateNotif.classList.add('show');
+                                    if (updateNotif) {
+                                        updateNotif.classList.add('show');
+                                    }
                                     
                                     const reloadBtn = document.getElementById('reload-app-btn');
                                     if (reloadBtn) {
-                                        // 4. Saat tombol diklik, kirim pesan ke worker baru
-                                        reloadBtn.onclick = () => {
+                                        // [PERBAIKAN] Menggunakan addEventListener agar lebih andal
+                                        reloadBtn.addEventListener('click', () => {
                                             installingWorker.postMessage({ action: 'skipWaiting' });
-                                        };
+                                        }, { once: true }); // Opsi { once: true } agar listener otomatis dihapus setelah sekali klik
                                     }
                                 }
                             };
@@ -98,7 +96,6 @@
                         console.log('ServiceWorker registration failed: ', error);
                     });
     
-                    // 5. Setelah worker baru mengambil alih, muat ulang halaman
                     let refreshing;
                     navigator.serviceWorker.addEventListener('controllerchange', () => {
                         if (refreshing) return;

@@ -1,8 +1,8 @@
 ﻿// Nama cache (versi dinaikkan untuk memicu pembaruan)
-const STATIC_CACHE = 'banplex-static-v5';
-const DYNAMIC_CACHE = 'banplex-dynamic-v5';
-const IMG_CACHE = 'banplex-img-v5';
-const FONT_CACHE = 'banplex-font-v5';
+const STATIC_CACHE = 'banplex-static-v6';
+const DYNAMIC_CACHE = 'banplex-dynamic-v6';
+const IMG_CACHE = 'banplex-img-v6';
+const FONT_CACHE = 'banplex-font-v6';
 
 // Batas entri cache untuk mencegah cache membengkak
 const IMG_CACHE_MAX_ENTRIES = 120;
