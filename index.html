@@ -78,16 +78,24 @@
                             installingWorker.onstatechange = () => {
                                 if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
                                     const updateNotif = document.getElementById('update-notification');
-                                    if (updateNotif) {
-                                        updateNotif.classList.add('show');
-                                    }
-                                    
                                     const reloadBtn = document.getElementById('reload-app-btn');
-                                    if (reloadBtn) {
-                                        // [PERBAIKAN] Menggunakan addEventListener agar lebih andal
+        
+                                    if (updateNotif && reloadBtn) {
+                                        // Tampilkan notifikasi
+                                        updateNotif.classList.add('show');
+        
+                                        // [FUNGSI BARU] Menutup pop-up saat area luar disentuh
+                                        updateNotif.addEventListener('click', (e) => {
+                                            // Hanya tutup jika yang diklik adalah latar belakangnya, bukan kartu di dalamnya
+                                            if (e.target === updateNotif) {
+                                                updateNotif.classList.remove('show');
+                                            }
+                                        });
+        
+                                        // [PERBAIKAN] Memastikan tombol "Perbarui" berfungsi untuk update
                                         reloadBtn.addEventListener('click', () => {
                                             installingWorker.postMessage({ action: 'skipWaiting' });
-                                        }, { once: true }); // Opsi { once: true } agar listener otomatis dihapus setelah sekali klik
+                                        }, { once: true });
                                     }
                                 }
                             };
@@ -95,7 +103,7 @@
                     }).catch(error => {
                         console.log('ServiceWorker registration failed: ', error);
                     });
-    
+        
                     let refreshing;
                     navigator.serviceWorker.addEventListener('controllerchange', () => {
                         if (refreshing) return;
@@ -105,5 +113,5 @@
                 });
             }
         </script>
-    </body>
-    </html>
+        </body>
+        </html>

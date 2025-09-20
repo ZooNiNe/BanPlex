@@ -1,5 +1,5 @@
 /* =======================================================
- * BanPlex Styles - v6.0 Progressive App
+ * BanPlex Styles - v7.0 Progressive App
  * ======================================================= */
  :root {
   --bg-start: #f0f4f8;
@@ -130,7 +130,7 @@ select { min-height: 40px; }
 }
 
 /* =======================================================
- * [PERUBAHAN BESAR] Desain Dashboard v6 - Modern & Ramping
+ * [PERUBAHAN BESAR] Desain Dashboard v7 - Modern & Ramping
  * ======================================================= */
 .dashboard-balance-grid {
   display: grid;

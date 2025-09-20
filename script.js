@@ -773,9 +773,11 @@ async function main() {
         const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
     
         const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
+            // Logika filter yang salah sudah dihapus dari sini
             const actual = appState.expenses
-                .filter(e => e.projectId === p.id && !internalProjects.some(ip => ip.id === e.projectId))
+                .filter(e => e.projectId === p.id)
                 .reduce((sum, e) => sum + e.amount, 0);
+            
             const remaining = p.budget - actual;            
             const percentage = p.budget > 0 ? (actual / p.budget) * 100 : 0;
             return { ...p, actual, remaining, percentage };
@@ -804,7 +806,7 @@ async function main() {
                 </div>
             </div>`;
     
-        const projectBudgetHTML = `
+            const projectBudgetHTML = `
             <h5 class="section-title-owner">Sisa Anggaran Proyek</h5>
             <div class="card card-pad">
                 ${projectsWithBudget.length > 0 ? projectsWithBudget.map(p => `
@@ -823,7 +825,7 @@ async function main() {
                     </div>
                 `).join('') : '<p class="empty-state-small">Tidak ada proyek dengan anggaran.</p>'}
             </div>`;
-    
+
         const dailyRecapHTML = `
              <h5 class="section-title-owner">Rekap Pengeluaran Hari Ini</h5>
              <div class="card card-pad">
