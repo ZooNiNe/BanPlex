@@ -276,7 +276,38 @@ async function main() {
         modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModalFunc(); });
         modalEl.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', closeModalFunc));
         attachModalEventListeners(type, data, closeModalFunc);
-    }    
+    }  
+    function _createSalaryBillDetailContentHTML(bill) {
+        const projectName = appState.projects.find(p => p.id === bill.projectId)?.projectName || 'Proyek tidak diketahui';
+        const statusText = bill.status === 'paid' ? 'Lunas' : 'Belum Lunas';
+        const statusClass = bill.status === 'paid' ? 'positive' : 'negative';
+        const date = bill.createdAt?.toDate ? bill.createdAt.toDate().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : 'N/A';
+    
+        // [STRUKTUR HTML BARU]
+        return `
+            <div class="detail-modal-header">
+                <h4>${bill.description}</h4>
+                <strong>${fmtIDR(bill.amount)}</strong>
+            </div>
+            <div class="detail-modal-body">
+                <dl class="detail-list">
+                    <div>
+                        <dt>Proyek Terkait</dt>
+                        <dd>${projectName}</dd>
+                    </div>
+                    <div>
+                        <dt>Status</dt>
+                        <dd><span class="status-badge ${statusClass}">${statusText}</span></dd>
+                    </div>
+                    <div>
+                        <dt>Tanggal Dibuat</dt>
+                        <dd>${date}</dd>
+                    </div>
+                </dl>
+            </div>
+        `;
+    }
+            
     function getModalContent(type, data) {
         if (type === 'imageView') {
             return `<div class="image-view-modal" data-close-modal>

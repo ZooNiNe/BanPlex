@@ -1207,3 +1207,82 @@ html, body { overscroll-behavior-y: none; }
 .value.negative { color: var(--danger); }
 /* Pastikan warna hitam utama tidak menimpa ini */
 .dashboard-balance-card .value { font-size: 0.9rem; /* ... */ }
+
+
+/* ... di akhir file style.css ... */
+
+/* [DESAIN BARU] Penyesuaian Modal Detail */
+
+/* Menghilangkan padding default agar bisa diatur di elemen anak */
+.modal-body {
+  padding: 0;
+  overflow-y: auto;
+}
+
+/* Header di dalam modal (Deskripsi & Jumlah) */
+.detail-modal-header {
+  padding: 1rem 1.25rem;
+  text-align: center;
+  background-color: var(--surface-muted); /* Latar belakang abu-abu lembut */
+}
+.detail-modal-header h4 {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin: 0 0 0.5rem 0;
+}
+.detail-modal-header strong {
+  font-size: 1.75rem; /* Ukuran jumlah diperbesar */
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Konten utama di dalam modal (daftar detail) */
+.detail-modal-body {
+  padding: 0.5rem 1.25rem 1.25rem 1.25rem;
+}
+
+/* Penataan ulang daftar detail */
+.detail-list div { 
+display: flex; 
+justify-content: space-between; 
+align-items: center; /* Membuat rata tengah vertikal */
+padding: .9rem 0; /* Jarak vertikal antar item */
+border-bottom: 1px solid var(--line); 
+gap: 1rem;
+}
+.detail-list div:last-child { 
+border-bottom: none; 
+}
+
+/* Label (Deskripsi, Proyek, dll) */
+.detail-list dt { 
+font-size: 0.85rem;
+color: var(--text-dim); 
+}
+
+/* Value (Gaji Khoer, Rp 185.000, dll) */
+.detail-list dd { 
+font-size: 0.85rem;
+font-weight: 600; 
+text-align: right; 
+}
+
+/* [BARU] Badge untuk Status (Lunas/Belum Lunas) */
+.status-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px; /* Bentuk pil */
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.status-badge.positive {
+  color: #15803d; /* Warna teks hijau tua */
+  background-color: #dcfce7; /* Warna latar hijau muda */
+}
+
+.status-badge.negative {
+  color: #b91c1c; /* Warna teks merah tua */
+  background-color: #fee2e2; /* Warna latar merah muda */
+}
