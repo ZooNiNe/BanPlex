@@ -24,6 +24,7 @@
   --radius-lg: 20px;
   --spacing: 1rem;
   --transition-base: 250ms cubic-bezier(.4,0,.2,1);
+  --grad-danger: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -180,14 +181,18 @@ select { min-height: 40px; }
 
 /* [BARU] Aksi Cepat ditempatkan di dalam card */
 .quick-actions-card {
-  padding: 0.5rem 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
 .dashboard-actions-grid { 
   display: grid; 
-  grid-template-columns: repeat(4, 1fr);
-  gap: .75rem;
-  padding: .75rem;
+  grid-template-columns: repeat(5, 1fr); /* [DIUBAH] Dari 4 menjadi 5 kolom */
+  gap: 0.75rem; /* [DIUBAH] Jarak antar ikon diperkecil */
+  padding: 0;
+  margin-bottom: 1.5rem;
 }
 .dashboard-action-item { display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; background: none; border: none; padding: 0; }
 .dashboard-action-item .icon-wrapper { width: 56px; height: 56px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); color: var(--text); display: flex; align-items: center; justify-content: center; margin-bottom: .35rem; transition: background-color 0.2s, transform .15s ease; }
@@ -227,7 +232,7 @@ select { min-height: 40px; }
 
 /* [DIRAMPINGKAN] Tata Letak Anggaran Proyek */
 .budget-item {
-  padding: 0.75rem 0; /* Padding vertikal dikurangi */
+  padding: 0.75rem 0;
   border-bottom: 1px solid var(--line);
 }
 .budget-item:first-child { padding-top: 0; }
@@ -237,27 +242,26 @@ select { min-height: 40px; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem; /* Margin dikurangi */
+  margin-bottom: 0.6rem; /* Beri jarak ke progress bar */
 }
 .budget-info .project-name {
   font-weight: 600;
-  font-size: 0.8rem; /* Ukuran font nama proyek disesuaikan */
+  font-size: 0.85rem;
 }
 .budget-info .remaining-amount {
   font-weight: 700;
-  font-size: 0.9rem; /* Ukuran font sisa anggaran disesuaikan */
-  color: var(--text) !important; /* Warna dibuat hitam */
+  font-size: 0.9rem;
 }
 .budget-info .remaining-amount.negative {
-    color: var(--danger) !important; /* Kecuali jika negatif */
+    color: var(--danger);
 }
 .progress-bar-container {
-    height: 6px; /* Progress bar dibuat lebih tipis */
+    height: 6px; /* Progress bar lebih tipis */
     width: 100%;
     background-color: var(--surface-muted);
     border-radius: 3px;
     overflow: hidden;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.4rem; /* Jarak ke detail di bawah */
 }
 .progress-bar {
     height: 100%;
@@ -268,10 +272,9 @@ select { min-height: 40px; }
 .budget-details {
     display: flex;
     justify-content: space-between;
-    font-size: 0.6rem; /* Font detail diperkecil */
+    font-size: 0.7rem; /* Font detail diperkecil */
     color: var(--text-dim);
 }
-
 .daily-recap-item {
   display: flex;
   justify-content: space-between;
@@ -1199,3 +1202,8 @@ html, body { overscroll-behavior-y: none; }
 .update-card .btn {
   width: 100%;
 }
+
+.value.positive { color: var(--success); }
+.value.negative { color: var(--danger); }
+/* Pastikan warna hitam utama tidak menimpa ini */
+.dashboard-balance-card .value { font-size: 0.9rem; /* ... */ }

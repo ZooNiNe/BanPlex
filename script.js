@@ -755,24 +755,24 @@ async function main() {
     const fetchAndCacheData = async (key, col, order = 'createdAt') => {
         const cacheKey = `master_data:${key}`;
         try {
-            // 1. Coba ambil dari cache (localStorage) dulu
+            // 1. Selalu coba ambil dari cache (localStorage) dulu untuk tampilan cepat
             const cachedData = localStorage.getItem(cacheKey);
             if (cachedData) {
                 appState[key] = JSON.parse(cachedData);
             }
 
-            // 2. Jika online, selalu coba ambil data terbaru dari Firestore
+            // 2. Jika online, ambil data terbaru dari Firestore
             if (appState.isOnline) {
                 const snap = await getDocs(query(col, orderBy(order, 'desc')));
                 const freshData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-                // 3. Simpan data baru ke state dan cache
+                // 3. Simpan data baru ke state dan perbarui cache
                 appState[key] = freshData;
                 localStorage.setItem(cacheKey, JSON.stringify(freshData));
             } else if (!cachedData) {
-                // 4. Jika offline dan tidak ada di cache, set state ke array kosong
+                // 4. Jika offline dan tidak ada di cache sama sekali, set state ke array kosong
                 appState[key] = [];
-                toast('info', `Data ${key} tidak tersedia saat offline.`);
+                console.warn(`Data ${key} tidak tersedia saat offline dan tidak ada di cache.`);
             }
         } catch (e) {
             console.error(`Gagal memuat atau menyimpan cache ${key}:`, e);
@@ -783,7 +783,7 @@ async function main() {
             }
         }
     };
-    
+
     async function renderDashboardPage() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
@@ -830,7 +830,9 @@ async function main() {
             return recap;
         }, {});
     
-        // 3. Render HTML (kode ini tidak berubah)
+        const labaClass = labaBersih >= 0 ? 'positive' : 'negative';
+        const tagihanClass = totalUnpaid > 0 ? 'negative' : 'positive';
+            
         const balanceCardsHTML = `
             <div class="dashboard-balance-grid">
                 <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="laporan">
@@ -853,7 +855,7 @@ async function main() {
                             <strong class="remaining-amount ${p.remaining < 0 ? 'negative' : ''}">${fmtIDR(p.remaining)}</strong>
                         </div>
                         <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${Math.min(p.percentage, 100)}%; background-color: ${p.percentage > 100 ? 'var(--danger)' : 'var(--info)'};"></div>
+                            <div class="progress-bar" style="width: ${Math.min(p.percentage, 100)}%; background-image: ${p.percentage > 100 ? 'var(--grad-danger)' : 'var(--grad)'};"></div>
                         </div>
                         <div class="budget-details">
                             <span>Terpakai: ${fmtIDR(p.actual)}</span>
@@ -875,7 +877,7 @@ async function main() {
              </div>`;
     
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
-        const mainActionIds = ['tagihan', 'laporan', 'stok'];
+    const mainActionIds = ['tagihan', 'laporan', 'stok', 'pengeluaran'];
         const mainActions = [];
         const extraActions = [];
     
@@ -897,24 +899,23 @@ async function main() {
     
         const quickActionsHTML = `
             <h5 class="section-title-owner">Aksi Cepat</h5>
-            <div class="card card-pad quick-actions-card">
-                <div id="quick-actions-grid" class="dashboard-actions-grid actions-collapsed">
-                    ${mainActions.map(link => createActionItemHTML(link)).join('')}
-                    
-                    ${extraActions.length > 0 ? `
-                        <button class="dashboard-action-item" data-action="toggle-more-actions">
-                            <div class="icon-wrapper"><span class="material-symbols-outlined">more_horiz</span></div>
-                            <span class="label">Lainnya</span>
-                        </button>
-                    ` : ''}
-    
-                    ${extraActions.map(link => createActionItemHTML(link, true)).join('')}
-                </div>
+            <div id="quick-actions-grid" class="dashboard-actions-grid actions-collapsed">
+                ${mainActions.map(link => createActionItemHTML(link)).join('')}
+                
+                ${extraActions.length > 0 ? `
+                    <button class="dashboard-action-item" data-action="toggle-more-actions">
+                        <div class="icon-wrapper"><span class="material-symbols-outlined">grid_view</span></div>
+                        <span class="label">Lainnya</span>
+                    </button>
+                ` : ''}
+
+                ${extraActions.map(link => createActionItemHTML(link, true)).join('')}
             </div>`;
 
         container.innerHTML = balanceCardsHTML + quickActionsHTML + projectBudgetHTML + dailyRecapHTML;
     }
-        async function renderPengaturanPage() {
+    
+    async function renderPengaturanPage() {
         const container = $('.page-container');
         const { currentUser, userRole } = appState;
         const photo = currentUser?.photoURL || `https://placehold.co/80x80/e2e8f0/64748b?text=${(currentUser?.displayName||'U')[0]}`;

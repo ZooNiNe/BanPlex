@@ -1,8 +1,8 @@
 ﻿// Nama cache (versi dinaikkan untuk memicu pembaruan)
-const STATIC_CACHE = 'banplex-static-v9';
-const DYNAMIC_CACHE = 'banplex-dynamic-v9';
-const IMG_CACHE = 'banplex-img-v9';
-const FONT_CACHE = 'banplex-font-v9';
+const STATIC_CACHE = 'banplex-static-v10'; // <-- Versi dinaikkan
+const DYNAMIC_CACHE = 'banplex-dynamic-v10';
+const IMG_CACHE = 'banplex-img-v10';
+const FONT_CACHE = 'banplex-font-v10';
 
 // Batas entri cache untuk mencegah cache membengkak
 const IMG_CACHE_MAX_ENTRIES = 120;
@@ -78,14 +78,21 @@ self.addEventListener('fetch', event => {
 
   if (request.method !== 'GET') return;
 
-  // 1. Aset Inti (App Shell): Cache first. Aset ini sudah ada di cache statis.
+  // [PERBAIKAN PENTING]
+  // 0. Biarkan Permintaan API Firestore & Firebase Auth Lewat:
+  // Firebase memiliki mekanisme offline canggih sendiri. Service worker tidak boleh
+  // meng-cache permintaan ini agar tidak terjadi konflik.
+  if (url.hostname.includes('firestore.googleapis.com') || url.hostname.includes('firebaseapp.com')) {
+    return; // Langsung lanjutkan ke jaringan (Firestore/Auth akan menanganinya)
+  }
+
+  // 1. Aset Inti (App Shell): Cache first.
   if (STATIC_ASSETS.includes(url.pathname) || STATIC_ASSETS.includes(url.href)) {
     event.respondWith(caches.match(request));
     return;
   }
   
   // 2. Navigasi Dokumen: Network first, fallback to cache.
-  // Selalu coba dapatkan versi terbaru dari index.html, jika gagal (offline), gunakan cache.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -95,7 +102,6 @@ self.addEventListener('fetch', event => {
   }
 
   // 3. Font Google: Stale-While-Revalidate.
-  // Ambil dari cache untuk kecepatan, lalu perbarui di latar belakang.
   if (url.hostname.includes('fonts.gstatic.com') || url.hostname.includes('fonts.googleapis.com')) {
     event.respondWith(
       caches.open(FONT_CACHE).then(cache => {
@@ -147,11 +153,9 @@ self.addEventListener('fetch', event => {
   );
 });
 
-
 // Menerima pesan dari client untuk mengaktifkan service worker baru
 self.addEventListener('message', event => {
   if (event.data && event.data.action === 'skipWaiting') {
     self.skipWaiting();
   }
 });
-
