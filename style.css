@@ -161,13 +161,13 @@ select { min-height: 40px; }
 }
 
 .dashboard-balance-card .label {
-  font-size: 0.8rem; /* Ukuran font label sedikit lebih besar */
+  font-size: 0.7rem; /* Ukuran font label sedikit lebih besar */
   color: var(--text-dim);
   font-weight: 500;
 }
 
 .dashboard-balance-card .value {
-  font-size: 0.9rem; /* [DIUBAH] Ukuran font disamakan dengan kartu anggaran */
+  font-size: 0.8rem; /* [DIUBAH] Ukuran font disamakan dengan kartu anggaran */
   font-weight: 700;
   line-height: 1.2;
   color: var(--text) !important; /* [DIUBAH] Warna dibuat hitam semua, mengabaikan class .positive/.negative */
@@ -1078,4 +1078,5 @@ html, body { overscroll-behavior-y: none; }
 .project-type-internal {
   background-color: var(--warn-bg); /* Warna latar kuning muda */
   color: var(--warn);               /* Warna teks kuning */
+
 }
