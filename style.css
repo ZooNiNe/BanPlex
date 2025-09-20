@@ -167,7 +167,7 @@ select { min-height: 40px; }
 }
 
 .dashboard-balance-card .value {
-  font-size: 0.7rem; /* [DIUBAH] Ukuran font disamakan dengan kartu anggaran */
+  font-size: 0.9rem; /* [DIUBAH] Ukuran font disamakan dengan kartu anggaran */
   font-weight: 700;
   line-height: 1.2;
   color: var(--text) !important; /* [DIUBAH] Warna dibuat hitam semua, mengabaikan class .positive/.negative */
@@ -241,7 +241,7 @@ select { min-height: 40px; }
 }
 .budget-info .project-name {
   font-weight: 600;
-  font-size: 0.9rem; /* Ukuran font nama proyek disesuaikan */
+  font-size: 0.8rem; /* Ukuran font nama proyek disesuaikan */
 }
 .budget-info .remaining-amount {
   font-weight: 700;
@@ -268,7 +268,7 @@ select { min-height: 40px; }
 .budget-details {
     display: flex;
     justify-content: space-between;
-    font-size: 0.7rem; /* Font detail diperkecil */
+    font-size: 0.6rem; /* Font detail diperkecil */
     color: var(--text-dim);
 }
 
@@ -278,7 +278,7 @@ select { min-height: 40px; }
   align-items: center;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--line);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 .daily-recap-item:first-child { padding-top: 0; }
 .daily-recap-item:last-child { border-bottom: none; padding-bottom: 0; }
@@ -1078,6 +1078,4 @@ html, body { overscroll-behavior-y: none; }
 .project-type-internal {
   background-color: var(--warn-bg); /* Warna latar kuning muda */
   color: var(--warn);               /* Warna teks kuning */
-
 }
-
