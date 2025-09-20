@@ -1,5 +1,5 @@
 /* =======================================================
- * BanPlex Styles - v8.0 Progressive App
+ * BanPlex Styles - v9.0 Progressive App
  * ======================================================= */
  :root {
   --bg-start: #f0f4f8;
@@ -130,7 +130,7 @@ select { min-height: 40px; }
 }
 
 /* =======================================================
- * [PERUBAHAN BESAR] Desain Dashboard v8 - Modern & Ramping
+ * [PERUBAHAN BESAR] Desain Dashboard v9 - Modern & Ramping
  * ======================================================= */
 .dashboard-balance-grid {
   display: grid;
@@ -149,7 +149,7 @@ select { min-height: 40px; }
   flex-direction: column;
   gap: 0.35rem; 
   justify-content: center;
-  min-height: 72px;
+  min-height: 36px;
 }
 .dashboard-balance-card.clickable { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
 .dashboard-balance-card.clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
@@ -460,49 +460,111 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 }
 .sub-nav-item.active { color: var(--primary); border-bottom-color: var(--primary); }
 
-.card-list-item { 
-  padding: var(--spacing); 
-  margin-bottom: calc(var(--spacing) * 0.75); 
-  display: flex; align-items: center; gap: .5rem; 
+.card-list-item {
+  padding: .65rem 1rem; /* Padding vertikal dikurangi agar lebih ramping */
+  margin-bottom: 0.5rem; /* Jarak antar kartu dirapatkan */
+  display: flex;
+  align-items: center;
+  gap: .5rem;
 }
-.card-list-item-content { display: flex; justify-content: space-between; align-items: center; width: 100%; cursor: pointer; }
-.card-left { display: flex; align-items: center; gap: .75rem; min-width: 0; }
-.expense-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; background: #f3f4f6; flex-shrink: 0; }
-.card-list-item-title { font-size: 0.9rem; font-weight: 600; margin: 0; }
-.card-list-item-subtitle { font-size: 0.75rem; color: var(--text-dim); margin: .1rem 0 0; }
 
-/* Small badges row on list cards (e.g., expense category) */
-.card-list-item-badges { display: flex; gap: .35rem; align-items: center; margin-top: .25rem; }
+/* Tata letak utama kartu: Kiri dan Kanan */
+.card-list-item-content {
+  display: flex;
+  justify-content: space-between; /* Mendorong elemen ke ujung kiri dan kanan */
+  align-items: flex-start; /* Rata atas agar rapi saat teks wrapping */
+  width: 100%;
+  cursor: pointer;
+  gap: 1rem; /* Jarak antara sisi kiri dan kanan */
+}
 
+/* Sisi kiri (detail): Diberi ruang untuk tumbuh dan teks bisa wrap */
+.card-list-item-details {
+  flex: 1; /* Mengambil sisa ruang yang tersedia */
+  min-width: 0; /* Penting untuk flexbox agar bisa mengecil dan wrap dengan benar */
+}
+
+.card-list-item-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.card-list-item-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: .1rem; /* Jarak dari judul sedikit dikurangi */
+}
+
+/* Sisi kanan (jumlah): Lebar tetap dan rata kanan */
 .card-list-item-amount-wrapper {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  flex-shrink: 0;
+  align-items: flex-end; /* Semua item di dalamnya rata kanan */
+  flex-shrink: 0; /* Mencegah sisi kanan penyusutan */
+  text-align: right; /* Pastikan teks rata kanan */
 }
+
 .card-list-item-amount {
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--primary);
+  white-space: nowrap;
 }
-.paid-indicator, .card-list-item-repayment-info {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  font-size: 0.75rem;
+
+/* [DIKEMBALIKAN & DISEMPURNAKAN] Desain untuk semua status (Lunas, Sisa, Belum Dibayar) */
+.paid-indicator,
+.card-list-item-repayment-info {
+  display: flex; /* Membuat ikon dan teks sejajar horizontal */
+  align-items: center; /* Menyelaraskan ikon dan teks secara vertikal */
+  justify-content: flex-end; /* Memastikan rata kanan */
+  gap: .25rem; /* Jarak kecil antara ikon dan teks */
+  font-size: 0.75rem; /* Ukuran font status disamakan */
   margin-top: .1rem;
-}
-.paid-indicator {
-  color: var(--success);
   font-weight: 500;
 }
+
+/* Warna spesifik untuk status Lunas */
+.paid-indicator {
+color: var(--success);
+}
+
+/* Ukuran ikon di dalam status */
 .paid-indicator .material-symbols-outlined {
-  font-size: 1rem;
+  font-size: 1rem; /* Ukuran ikon diperkecil */
   font-variation-settings: 'FILL' 1;
 }
-.card-list-item-repayment-info {
-  color: var(--warn);
-  font-weight: 500;
+
+/* [BARU] Style untuk Modal Aksi */
+.actions-modal-header {
+  text-align: center;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.actions-modal-header h4 {
+  font-size: 1rem;
+  margin: 0;
+  word-break: break-word;
+}
+.actions-modal-header span {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 0.25rem;
+}
+.actions-modal-header strong {
+  font-size: 1.25rem;
+  color: var(--primary);
+  display: block;
+  margin-top: 0.5rem;
+}
+.actions-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* Jarak antar tombol aksi */
 }
 
 .detail-list {
@@ -1078,4 +1140,62 @@ html, body { overscroll-behavior-y: none; }
 .project-type-internal {
   background-color: var(--warn-bg); /* Warna latar kuning muda */
   color: var(--warn);               /* Warna teks kuning */
+}
+
+#update-notification {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1500; /* Pastikan di atas modal lain */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+#update-notification.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.update-card {
+  background-color: var(--panel);
+  color: var(--text);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  max-width: 90%;
+  width: 320px;
+  margin: 1rem;
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#update-notification.show .update-card {
+    transform: scale(1);
+}
+
+.update-card h4 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.update-card p {
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.update-card .btn {
+  width: 100%;
 }

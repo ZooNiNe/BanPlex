@@ -50,86 +50,18 @@
     <!-- Container untuk elemen dinamis -->
     <div id="modal-container"></div>
     <div id="popup-container"></div>
-    <div id="update-notification" class="update-notification">
+    <div id="update-notification">
         <div class="update-card">
             <h4>Pembaruan Tersedia</h4>
-            <p>Versi baru siap dipasang. Muat ulang untuk memperbarui aplikasi.</p>
+            <p>Versi baru aplikasi telah diunduh. Perbarui sekarang untuk mendapatkan fitur terbaru.</p>
             <button id="reload-app-btn" class="btn btn-primary">Perbarui Sekarang</button>
         </div>
     </div>
-    
+        
     <input type="file" id="attachment-uploader" accept="image/*" class="hidden">
 
-    <!-- Mencegah Firebase mencari file init.json -->
     <script>window.firebaseConfig = {}</script>
     
-    <body>
-        <script type="module" src="script.js"></script>
-        <script>
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('./service-worker.js').then(registration => {
-                        console.log('ServiceWorker registration successful');
-                        registration.onupdatefound = () => {
-                            const installingWorker = registration.installing;
-                            if (installingWorker == null) {
-                                return;
-                            }
-                            installingWorker.onstatechange = () => {
-                                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    const updateNotif = document.getElementById('update-notification');
-                                    const reloadBtn = document.getElementById('reload-app-btn');
-        
-                                    if (updateNotif && reloadBtn) {
-                                        // Tampilkan notifikasi "Pembaruan Tersedia"
-                                        updateNotif.classList.add('show');
-        
-                                        // Menutup pop-up saat area luar disentuh
-                                        updateNotif.addEventListener('click', (e) => {
-                                            if (e.target === updateNotif) {
-                                                updateNotif.classList.remove('show');
-                                            }
-                                        });
-        
-                                        // [PERBAIKAN UTAMA DI SINI]
-                                        reloadBtn.addEventListener('click', () => {
-                                            // 1. Sembunyikan notifikasi "Pembaruan Tersedia"
-                                            updateNotif.classList.remove('show');
-        
-                                            // 2. Tampilkan pop-up aksi "Memperbarui..."
-                                            const loader = document.getElementById('global-loader');
-                                            if (loader) {
-                                                // Tambahkan teks ke loader agar lebih informatif
-                                                const loaderContent = loader.querySelector('.loader-content');
-                                                if (!loaderContent.querySelector('p')) {
-                                                    const message = document.createElement('p');
-                                                    message.textContent = 'Memperbarui aplikasi...';
-                                                    message.style.color = '#64748b';
-                                                    loaderContent.appendChild(message);
-                                                }
-                                                loader.style.display = 'flex';
-                                            }
-        
-                                            // 3. Kirim pesan ke service worker untuk memulai update
-                                            installingWorker.postMessage({ action: 'skipWaiting' });
-                                        }, { once: true });
-                                    }
-                                }
-                            };
-                        };
-                    }).catch(error => {
-                        console.log('ServiceWorker registration failed: ', error);
-                    });
-        
-                    // Listener ini akan memuat ulang halaman setelah worker baru aktif
-                    let refreshing;
-                    navigator.serviceWorker.addEventListener('controllerchange', () => {
-                        if (refreshing) return;
-                        window.location.reload();
-                        refreshing = true;
-                    });
-                });
-            }
-        </script>
-        </body>
-        </html>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
