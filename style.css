@@ -399,7 +399,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .modal-content { 
   width: 100%; 
   max-height: 95vh;
-  min-height: 250px; /* [TAMBAHKAN INI] Memberi tinggi minimal */
+  min-height: 150px; /* [TAMBAHKAN INI] Memberi tinggi minimal */
   border-radius: var(--radius-lg) var(--radius-lg) 0 0; 
   background: #fdfdfd;
   box-shadow: var(--shadow-lg); 
@@ -1359,4 +1359,17 @@ text-align: right;
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--primary);
+}
+
+.confirm-modal-text {
+  text-align: center;      /* Membuat teks rata tengah */
+  font-size: 0.9rem;       /* Sedikit menyesuaikan ukuran font */
+  line-height: 1.6;        /* Memberi jarak vertikal antar baris agar lebih lega */
+  padding: 0.5rem 0;       /* Memberi sedikit padding atas & bawah */
+  color: var(--text-dim);  /* Menggunakan warna teks sekunder */
+}
+
+.confirm-modal-text strong {
+  color: var(--text);      /* Membuat nama (yang tebal) menjadi warna teks utama */
+  font-weight: 600;
 }

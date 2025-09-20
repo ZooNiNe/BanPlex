@@ -330,10 +330,10 @@ async function main() {
             
             return simpleModal(
                 titles[type],
-                `<p>${data.message || messages[type]}</p>`,
+                `<p class="confirm-modal-text">${data.message || messages[type]}</p>`, // <-- TAMBAHKAN CLASS DI SINI
                 `<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-btn" class="btn ${confirmClasses[type]}">${confirmTexts[type]}</button>`
             );
-        }
+                }
         
         if (type === 'confirmExpense') {
             return simpleModal(
@@ -380,7 +380,7 @@ async function main() {
                 </div>
             `);
         }
-        
+
         if (type === 'billActionsModal') {
             const { bill, actions } = data;
             const supplierName = appState.suppliers.find(s => s.id === (appState.expenses.find(e => e.id === bill.expenseId)?.supplierId))?.supplierName || '';
@@ -1578,31 +1578,36 @@ async function renderPengeluaranPage() {
     await renderTabContent(lastSubPage);
 }
 
-    function _getFormPengeluaranHTML(type, categoryOptions, categoryMasterType, categoryLabel, supplierOptions, projectOptions) {
-        return `
-        <div class="card card-pad">
-            <form id="pengeluaran-form" data-type="${type}">
-                ${createMasterDataSelect('expense-project', 'Proyek', projectOptions, '', 'projects')}
-                ${categoryOptions.length > 0 ? createMasterDataSelect('expense-category', categoryLabel, categoryOptions, '', categoryMasterType) : ''}
-                <div class="form-group">
-                    <label>Jumlah</label>
-                    <input type="text" id="pengeluaran-jumlah" inputmode="numeric" required placeholder="mis. 50.000">
+function _getFormPengeluaranHTML(type, categoryOptions, categoryMasterType, categoryLabel, supplierOptions, projectOptions) {
+    return `
+    <div class="card card-pad">
+        <form id="pengeluaran-form" data-type="${type}">
+            ${createMasterDataSelect('expense-project', 'Proyek', projectOptions, '', 'projects')}
+            ${categoryOptions.length > 0 ? createMasterDataSelect('expense-category', categoryLabel, categoryOptions, '', categoryMasterType) : ''}
+            <div class="form-group">
+                <label>Jumlah</label>
+                <input type="text" id="pengeluaran-jumlah" name="pengeluaran-jumlah" inputmode="numeric" required placeholder="mis. 50.000"> </div>
+             <div class="form-group">
+                <label>Deskripsi</label>
+                <input type="text" id="pengeluaran-deskripsi" name="pengeluaran-deskripsi" required placeholder="mis. Beli semen"> </div>
+            ${createMasterDataSelect('expense-supplier', 'Supplier/Penerima', supplierOptions, '', 'suppliers')}
+            <div class="form-group">
+                <label>Tanggal</label>
+                <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
+            </div>
+            <div class="form-group">
+                <label>Status Pembayaran</label>
+                <div class="sort-direction">
+                    <button type="button" class="btn-status-payment active" data-status="unpaid">Jadikan Tagihan</button>
+                    <button type="button" class="btn-status-payment" data-status="paid">Sudah Lunas</button>
                 </div>
-                 <div class="form-group">
-                    <label>Deskripsi</label>
-                    <input type="text" id="pengeluaran-deskripsi" required placeholder="mis. Beli semen">
-                </div>
-                ${createMasterDataSelect('expense-supplier', 'Supplier/Penerima', supplierOptions, '', 'suppliers')}
-                <div class="form-group">
-                    <label>Tanggal</label>
-                    <input type="date" id="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Simpan</button>
-            </form>
-        </div>
-        `;
-    }
-    
+                <input type="hidden" name="status" value="unpaid">
+            </div>
+            <button type="submit" class="btn btn-primary">Simpan Pengeluaran</button>
+        </form>
+    </div>
+    `;
+}    
     function _attachPengeluaranFormListeners(type) {
         _initCustomSelects();
         const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
@@ -1619,97 +1624,132 @@ async function renderPengeluaranPage() {
             });
         });
     
+        // Pasang listener spesifik berdasarkan tipe form
         if (type === 'material') {
-            // Pasang semua listener yang relevan untuk form material
             $('#add-invoice-item-btn')?.addEventListener('click', _addInvoiceItemRow);
             $('#invoice-items-container')?.addEventListener('input', _handleInvoiceItemChange);
             const invoiceNumberInput = $('#pengeluaran-deskripsi');
             if (invoiceNumberInput) {
                 invoiceNumberInput.value = _generateInvoiceNumber();
             }
-    
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                handleAddPengeluaran(e, 'material'); // Panggil handleAddPengeluaran
-            });
         } else {
             $('#pengeluaran-jumlah')?.addEventListener('input', _formatNumberInput);
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                handleAddPengeluaran(e, type); // Panggil handleAddPengeluaran
-            });
         }
-    } // <-- Kurung kurawal penutup yang benar untuk fungsi ini
+        
+        // Pasang listener submit untuk form, APAPUN tipenya
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleAddPengeluaran(e, type); // Panggil handleAddPengeluaran
+        });
+    }
     
-    async function handleAddPengeluaran(e, type) {
-        e.preventDefault();
-        const form = e.target;
-        let expenseData;
+// GANTI SELURUH FUNGSI LAMA DENGAN VERSI BARU INI
+
+async function handleAddPengeluaran(e, type) {
+    e.preventDefault();
+    const form = e.target;
+    
+    // --- Proses Penyimpanan Dimulai ---
+    toast('syncing', 'Memvalidasi dan menyimpan...');
+    try {
+        // --- Validasi dan Pengumpulan Data ---
         const projectId = form.elements['expense-project']?.value || form.elements['project-id']?.value;
-    
         if (!projectId) {
             toast('error', 'Proyek harus dipilih.');
             return;
         }
-    
+
+        let expenseData;
         if (type === 'material') {
             const items = [];
             $$('.invoice-item-row', form).forEach(row => {
                 const name = row.querySelector('input[name="itemName"]').value;
                 const price = parseFormattedNumber(row.querySelector('input[name="itemPrice"]').value);
                 const qty = Number(row.querySelector('input[name="itemQty"]').value);
-                if (name && price > 0 && qty > 0) {
-                    items.push({ name, price, qty, total: price * qty });
-                }
+                if (name && price > 0 && qty > 0) items.push({ name, price, qty, total: price * qty });
             });
-    
+
             if (items.length === 0) {
                 toast('error', 'Harap tambahkan minimal satu barang.');
                 return;
             }
-    
+
             expenseData = {
                 amount: parseFormattedNumber($('#invoice-total-amount').textContent),
-                description: $('#pengeluaran-deskripsi', form).value.trim(),
-                supplierId: $('#supplier-id', form).value,
-                date: new Date($('#pengeluaran-tanggal', form).value),
-                type: 'material',
-                projectId,
-                items: items,
+                description: form.elements['pengeluaran-deskripsi'].value.trim(),
+                supplierId: form.elements['supplier-id'].value,
+                date: new Date(form.elements['pengeluaran-tanggal'].value),
+                type: 'material', projectId, items,
                 invoiceFile: form.elements.invoiceFile?.files[0] || null,
                 deliveryOrderFile: form.elements.deliveryOrderFile?.files[0] || null
             };
-            if (!expenseData.supplierId) {
-                toast('error', 'Harap pilih supplier.');
-                return;
-            }
-    
         } else {
             expenseData = {
-                amount: parseFormattedNumber($('#pengeluaran-jumlah', form).value),
-                description: $('#pengeluaran-deskripsi', form).value.trim(),
+                amount: parseFormattedNumber(form.elements['pengeluaran-jumlah'].value),
+                description: form.elements['pengeluaran-deskripsi'].value.trim(),
                 supplierId: form.elements['expense-supplier'].value,
                 categoryId: form.elements['expense-category']?.value || '',
-                date: new Date($('#pengeluaran-tanggal', form).value),
-                type: type,
-                projectId
+                date: new Date(form.elements['pengeluaran-tanggal'].value),
+                type: type, projectId
             };
-            if (!expenseData.supplierId) {
-                toast('error', 'Harap pilih supplier/penerima.');
-                return;
-            }
         }
-    
+        
+        // --- Validasi Akhir ---
         if (!expenseData.amount || !expenseData.description) {
             toast('error', 'Harap isi deskripsi dan jumlah.');
             return;
         }
-    
-        const status = form.querySelector('input[name="status"]')?.value || 'unpaid';
-        _saveExpense(expenseData, status, form);
-    }
+
+        const status = form.querySelector('input[name="status"]').value || 'unpaid';
+        expenseData.status = status;
+        expenseData.createdAt = serverTimestamp();
+
+        const { invoiceFile, deliveryOrderFile, ...dataToSave } = expenseData;
+
+        const expenseDocRef = await addDoc(expensesCol, dataToSave);
         
-    async function _saveExpense(form, type) {
+        const billData = {
+            expenseId: expenseDocRef.id,
+            description: dataToSave.description,
+            amount: dataToSave.amount,
+            dueDate: dataToSave.date,
+            status: dataToSave.status,
+            type: dataToSave.type,
+            projectId: dataToSave.projectId,
+            createdAt: serverTimestamp(),
+            paidAmount: status === 'paid' ? dataToSave.amount : 0,
+            ...(status === 'paid' && { paidAt: serverTimestamp() })
+        };
+        await addDoc(billsCol, billData);
+
+        // Upload file di latar belakang jika ada
+        if (invoiceFile) _uploadFileInBackground(expenseDocRef.id, 'invoiceUrl', invoiceFile, 'expenses');
+        if (deliveryOrderFile) _uploadFileInBackground(expenseDocRef.id, 'deliveryOrderUrl', deliveryOrderFile, 'expenses');
+
+        await _logActivity(`Menambah Pengeluaran: ${dataToSave.description}`, { docId: expenseDocRef.id, status });
+        
+        toast('success', 'Pengeluaran berhasil disimpan!');
+        
+        form.reset();
+        if (form && typeof form._clearDraft === 'function') form._clearDraft();
+        _initCustomSelects(form);
+        form.querySelectorAll('.custom-select-trigger span:first-child').forEach(s => s.textContent = 'Pilih...');
+        if(type === 'material') {
+            $('#invoice-items-container').innerHTML = '';
+            _addInvoiceItemRow();
+            _updateInvoiceTotal();
+            const invoiceNumberInput = $('#pengeluaran-deskripsi');
+            if (invoiceNumberInput) invoiceNumberInput.value = _generateInvoiceNumber();
+        }
+
+        handleNavigation('tagihan');
+
+    } catch (error) {
+        toast('error', 'Gagal menyimpan data.');
+        console.error("Error saving expense:", error);
+    }
+}
+    async function _saveExpense(expenseData, status, form) {
         toast('syncing', 'Menyimpan pengeluaran...');
         try {
             const status = form.elements.status.value;
@@ -2338,27 +2378,22 @@ async function renderPengeluaranPage() {
             .filter(s => s.category === 'Material')
             .map(s => ({ value: s.id, text: s.supplierName }));
         const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
-
+    
         return `
         <div class="card card-pad">
             <form id="material-invoice-form" data-type="material">
                 ${createMasterDataSelect('project-id', 'Proyek', projectOptions, '', 'projects')}
                 <div class="form-group">
                     <label>No. Faktur</label>
-                    <input type="text" id="pengeluaran-deskripsi" readonly class="readonly-input">
+                    <input type="text" id="pengeluaran-deskripsi" name="pengeluaran-deskripsi" readonly class="readonly-input">
                 </div>
                 ${createMasterDataSelect('supplier-id', 'Supplier', supplierOptions, '', 'suppliers')}
                  <div class="form-group">
                     <label>Tanggal Faktur</label>
-                    <input type="date" id="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
+                    <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
                 </div>
-
+    
                 <h5 class="invoice-section-title">Rincian Barang</h5>
-                <div class="invoice-items-header">
-                    <span>Nama Barang</span>
-                    <span>Harga & Qty</span>
-                    <span>Total</span>
-                </div>
                 <div id="invoice-items-container"></div>
                  <div class="add-item-action">
                     <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
@@ -2370,7 +2405,7 @@ async function renderPengeluaranPage() {
                     <span>Total Faktur:</span>
                     <strong id="invoice-total-amount">Rp 0</strong>
                 </div>
-
+    
                 <h5 class="invoice-section-title">Lampiran (Opsional)</h5>
                 <div class="form-group">
                     <label for="invoiceFile">Upload Bukti Faktur</label>
@@ -2380,13 +2415,22 @@ async function renderPengeluaranPage() {
                     <label for="deliveryOrderFile">Upload Surat Jalan</label>
                     <input type="file" name="deliveryOrderFile" accept="image/*">
                 </div>
-
+    
+                <div class="form-group">
+                    <label>Status Pembayaran</label>
+                    <div class="sort-direction">
+                        <button type="button" class="btn-status-payment active" data-status="unpaid">Jadikan Tagihan</button>
+                        <button type="button" class="btn-status-payment" data-status="paid">Sudah Lunas</button>
+                    </div>
+                    <input type="hidden" name="status" value="unpaid">
+                </div>
+    
                 <button type="submit" class="btn btn-primary">Simpan Faktur</button>
             </form>
         </div>
         `;
     }
-
+    
     function _addInvoiceItemRow() {
         const container = $('#invoice-items-container');
         if (!container) return;
@@ -3870,11 +3914,12 @@ async function renderPengeluaranPage() {
         if (!user) return;
         
         const actionMap = {
-            'approve': { message: `Setujui ${user.name} sebagai Viewer?`, data: { status: 'active', role: 'Viewer' } },
-            'make-editor': { message: `Ubah peran ${user.name} menjadi Editor?`, data: { role: 'Editor' } },
-            'make-viewer': { message: `Ubah peran ${user.name} menjadi Viewer?`, data: { role: 'Viewer' } },
-            'delete': { message: `Hapus atau tolak pengguna ${user.name}? Aksi ini tidak dapat dibatalkan.`, data: null }
+            'approve': { message: `Setujui <strong>${user.name}</strong> sebagai Viewer?`, data: { status: 'active', role: 'Viewer' } },
+            'make-editor': { message: `Ubah peran <strong>${user.name}</strong> menjadi Editor?`, data: { role: 'Editor' } },
+            'make-viewer': { message: `Ubah peran <strong>${user.name}</strong> menjadi Viewer?`, data: { role: 'Viewer' } },
+            'delete': { message: `Hapus atau tolak pengguna <strong>${user.name}</strong>? Aksi ini tidak dapat dibatalkan.`, data: null }
         };
+
         const action = actionMap[type];
         if (!action) return;
 
