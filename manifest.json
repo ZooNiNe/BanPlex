@@ -17,7 +17,7 @@
     },
     {
       "src": "icons-logo.png",
-      "sizes": "512x512",
+      "sizes": "256x256",
       "type": "image/png",
       "purpose": "any maskable"
     }
@@ -43,3 +43,4 @@
     }
   ]
 }
+
