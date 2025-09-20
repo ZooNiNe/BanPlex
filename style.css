@@ -53,18 +53,6 @@ body {
 .content-wrapper::before { top: -80px; right: -60px; width: 260px; height: 260px; background: radial-gradient(closest-side, rgba(14,165,233,.6), transparent 70%); }
 .content-wrapper::after { bottom: -100px; left: -80px; width: 300px; height: 300px; background: radial-gradient(closest-side, rgba(16,185,129,.5), transparent 70%); }
 
-.main-header { 
-  position: sticky; top: 0; z-index: 900; 
-  background-color: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line); 
-  padding: .75rem var(--spacing); 
-  display: flex; justify-content: space-between; align-items: center; 
-}
-.header-app-name { font-weight: 700; font-size: 1rem; line-height: 1.2; color: var(--text); }
-.header-page-name { font-size: 0.75rem; color: var(--text-dim); line-height: 1.2; }
-
 .page-container { padding: var(--spacing); }
 .page-container { position: relative; overscroll-behavior-y: contain; }
 
@@ -219,7 +207,24 @@ select { min-height: 40px; }
 .dashboard-action-item .icon-wrapper .material-symbols-outlined { font-size: 24px; }
 .dashboard-action-item .label { 
   font-weight: 500; font-size: 0.8rem; color: var(--text); line-height: 1.3; 
+  transition: font-size 0.3s ease;
 }
+
+/* [BARU] Gaya untuk animasi expand/collapse Aksi Cepat */
+.dashboard-action-item.action-item-extra {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.actions-collapsed .action-item-extra {
+    opacity: 0;
+    transform: scale(0.8);
+    max-height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    pointer-events: none;
+    font-size: 0; /* Sembunyikan label saat diciutkan */
+}
+
 
 /* Clickable cards */
 .card.clickable { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; position: relative; }
@@ -264,7 +269,12 @@ select { min-height: 40px; }
     overflow: hidden;
     margin-bottom: 0.4rem;
 }
-.progress-bar {\n    height: 100%;\n    border-radius: 3px;\n    transition: width var(--transition-base);\n    background-image: var(--grad);\n}
+.progress-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width var(--transition-base);
+    background-image: var(--grad);
+}
 .budget-details {
     display: flex;
     justify-content: space-between;
@@ -588,10 +598,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .loader-content { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
 .loader-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #e5e7eb; border-top-color: var(--primary); animation: spin 1s linear infinite; }
 
-.header-left { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
-.brand-logo-header { width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; }
-.header-title-container { display: flex; flex-direction: column; }
-
 .page { display: none; }
 .page.active { display: block; animation: fade-in .4s ease; }
 
@@ -738,7 +744,12 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 
 .recap-table tfoot { border-top: 2px solid var(--line); font-size: 1.05rem; }
 .progress-bar-container { display: flex; align-items: center; gap: .5rem; width: 100%; }
-.progress-bar-container .progress-bar {\n    height: 100%;\n    border-radius: 3px;\n    transition: width var(--transition-base);\n    background-image: var(--grad);\n}
+.progress-bar-container .progress-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width var(--transition-base);
+    background-image: var(--grad);
+}
 .progress-bar-container span { font-size: .8rem; font-weight: 600; flex-shrink: 0; }
 
  .attendance-header { display: flex; flex-wrap: nowrap; gap: .75rem; margin-bottom: 1.25rem; }
@@ -756,8 +767,8 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
  .attendance-status.checked-in { color: var(--primary); }
  .attendance-status.completed { color: var(--text); font-weight: 600; }
 
-.recap-filters { display: flex; flex-wrap: wrap; gap: var(--spacing); align-items: flex-end; }
-.recap-filters .form-group { margin-bottom: 0; flex-grow: 1; }
+.rekap-filters { display: flex; flex-wrap: wrap; gap: var(--spacing); align-items: flex-end; }
+.rekap-filters .form-group { margin-bottom: 0; flex-grow: 1; }
 .recap-table-wrapper { overflow-x: auto; }
 .recap-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
 .recap-table th, .recap-table td { padding: .75rem; text-align: left; border-bottom: 1px solid var(--line); }
@@ -765,7 +776,7 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .recap-table td { vertical-align: middle; }
 .recap-table tr:last-child td { border-bottom: none; }
 .recap-table strong { color: var(--primary); }
-.recap-actions-cell { display: flex; gap: 0.5rem; }
+.rekap-actions-cell { display: flex; gap: 0.5rem; }
 
 .manual-attendance-item { padding: 0.75rem 1rem; margin-bottom: .75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: nowrap; gap: 1rem; }
 .manual-attendance-item .worker-info { display: flex; flex-direction: column; flex-grow: 1; min-width: 0; }

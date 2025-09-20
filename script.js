@@ -1,4 +1,4 @@
-﻿/* global Chart, html2canvas, jspdf, Dexie */
+﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
 // @ts-check
 
 // =======================================================
@@ -58,10 +58,6 @@ async function main() {
         materialCategories: [], otherCategories: [], suppliers: [], workers: [],
         professions: [], incomes: [], fundingSources: [], expenses: [], bills: [],
         attendance: new Map(), users: [],
-        billsUI: { search: '', filter: { supplier: 'all', category: 'all', status: 'all', jenis: 'all' }, sort: 'date_desc' },
-        stokUI: { search: '', filter: {}, sort: 'name_az' },
-        rekapUI: { search: '', filter: { profession: 'all' }, sort: 'total_desc' },
-        dashboardActionsExpanded: false,
     };
 
     if (sessionStorage.getItem('isSigningIn') === 'true') {
@@ -278,8 +274,8 @@ async function main() {
         modalEl.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', closeModalFunc));
         attachModalEventListeners(type, data, closeModalFunc);
     }    
-    function getModalContent(modalType, data) {
-        if (modalType === 'imageView') {
+    function getModalContent(type, data) {
+        if (type === 'imageView') {
             return `<div class="image-view-modal" data-close-modal>
                         <img src="${data.src}" alt="Lampiran">
                         <button class="btn-icon image-view-close" data-close-modal>
@@ -289,33 +285,33 @@ async function main() {
         }        
         const modalWithHeader = (title, content) => `<div class="modal-content"><div class="modal-header"><h4>${title}</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body">${content}</div></div>`;
         const simpleModal = (title, content, footer) => `<div class="modal-content" style="max-width:400px"><div class="modal-header"><h4>${title}</h4></div><div class="modal-body">${content}</div><div class="modal-footer">${footer}</div></div>`;
-
-        if (modalType === 'login') return simpleModal('Login', '<p>Gunakan akun Google Anda.</p>', '<button id="google-login-btn" class="btn btn-primary">Masuk dengan Google</button>');
-        if (modalType === 'confirmLogout') return simpleModal('Keluar', '<p>Anda yakin ingin keluar?</p>', '<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-logout-btn" class="btn btn-danger">Keluar</button>');
-        if (modalType === 'confirmDelete' || modalType === 'confirmPayment' || modalType === 'confirmEdit' || modalType === 'confirmPayBill' || modalType === 'confirmGenerateBill' || modalType === 'confirmUserAction' || modalType === 'confirmDeleteAttachment' || modalType === 'confirmDeleteRecap') {
+    
+        if (type === 'login') return simpleModal('Login', '<p>Gunakan akun Google Anda.</p>', '<button id="google-login-btn" class="btn btn-primary">Masuk dengan Google</button>');
+        if (type === 'confirmLogout') return simpleModal('Keluar', '<p>Anda yakin ingin keluar?</p>', '<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-logout-btn" class="btn btn-danger">Keluar</button>');
+        if (type === 'confirmDelete' || type === 'confirmPayment' || type === 'confirmEdit' || type === 'confirmPayBill' || type === 'confirmGenerateBill' || type === 'confirmUserAction' || type === 'confirmDeleteAttachment' || type === 'confirmDeleteRecap') {
             const titles = { confirmDelete: 'Konfirmasi Hapus', confirmPayment: 'Konfirmasi Pembayaran', confirmEdit: 'Konfirmasi Perubahan', confirmPayBill: 'Konfirmasi Pembayaran', confirmGenerateBill: 'Konfirmasi Buat Tagihan', confirmUserAction: 'Konfirmasi Aksi', confirmDeleteAttachment: 'Hapus Lampiran', confirmDeleteRecap: 'Hapus Rekap Gaji' };
             const messages = { confirmDelete: 'Anda yakin ingin menghapus data ini?', confirmPayment: 'Anda yakin ingin melanjutkan pembayaran?', confirmEdit: 'Anda yakin ingin menyimpan perubahan?', confirmPayBill: 'Anda yakin ingin melanjutkan pembayaran ini?', confirmGenerateBill: 'Anda akan membuat tagihan gaji untuk pekerja ini. Lanjutkan?', confirmUserAction: 'Apakah Anda yakin?', confirmDeleteAttachment: 'Anda yakin ingin menghapus lampiran ini?', confirmDeleteRecap: 'Menghapus rekap ini akan menghapus data absensi terkait. Aksi ini tidak dapat dibatalkan. Lanjutkan?' };
             const confirmTexts = { confirmDelete: 'Hapus', confirmPayment: 'Ya, Bayar', confirmEdit: 'Ya, Simpan', confirmPayBill: 'Ya, Bayar', confirmGenerateBill: 'Ya, Buat Tagihan', confirmUserAction: 'Ya, Lanjutkan', confirmDeleteAttachment: 'Ya, Hapus', confirmDeleteRecap: 'Ya, Hapus' };
             const confirmClasses = { confirmDelete: 'btn-danger', confirmPayment: 'btn-success', confirmEdit: 'btn-primary', confirmPayBill: 'btn-success', confirmGenerateBill: 'btn-primary', confirmUserAction: 'btn-primary', confirmDeleteAttachment: 'btn-danger', confirmDeleteRecap: 'btn-danger' };
             
             return simpleModal(
-                titles[modalType],
-                `<p>${data.message || messages[modalType]}</p>`,
-                `<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-btn" class="btn ${confirmClasses[modalType]}">${confirmTexts[modalType]}</button>`
+                titles[type],
+                `<p>${data.message || messages[type]}</p>`,
+                `<button class="btn btn-secondary" data-close-modal>Batal</button><button id="confirm-btn" class="btn ${confirmClasses[type]}">${confirmTexts[type]}</button>`
             );
         }
         
-        if (modalType === 'confirmExpense') {
+        if (type === 'confirmExpense') {
             return simpleModal(
                 'Konfirmasi Status Pengeluaran',
                 '<p>Apakah pengeluaran ini sudah dibayar atau akan dijadikan tagihan?</p>',
                 `<button class="btn btn-secondary" id="confirm-bill-btn">Jadikan Tagihan</button><button id="confirm-paid-btn" class="btn btn-success">Sudah, Lunas</button>`
             );
         }
-        if (modalType === 'dataDetail' || modalType === 'payment' || modalType === 'manageMaster' || modalType === 'editMaster' || modalType === 'editItem' || modalType === 'editAttendance' || modalType === 'imageView' || modalType === 'manageUsers') {
+        if (type === 'dataDetail' || type === 'payment' || type === 'manageMaster' || type === 'editMaster' || type === 'editItem' || type === 'editAttendance' || type === 'imageView' || type === 'manageUsers') {
             return modalWithHeader(data.title, data.content);
         }
-        if (modalType === 'actionsMenu') {
+        if (type === 'actionsMenu') {
             const { actions, targetRect } = data;
             const top = targetRect.bottom + 8;
             const right = window.innerWidth - targetRect.right - 8;
@@ -324,77 +320,49 @@ async function main() {
                     ${actions.map(action => `<button class="actions-menu-item" data-action="${action.action}" data-id="${action.id}" data-type="${action.type}" data-expense-id="${action.expenseId || ''}"><span class="material-symbols-outlined">${action.icon}</span><span>${action.label}</span></button>`).join('')}
                 </div>`;
         }
-        if (modalType === 'billsFilter') {
-            const suppliers = appState.suppliers.map(s => ({ value: s.id, text: s.supplierName }));
-            const wrap = (inner) => `<form id="bills-filter-form">${inner}<div class="modal-footer"><button type="button" class="btn btn-secondary" data-close-modal>Batal</button><button type="submit" class="btn btn-primary">Terapkan</button></div></form>`;
-            const ui = appState.billsUI || { filter:{} };
-            const filterContent = `
-                ${createMasterDataSelect('filter-supplier', 'Supplier', [{value:'all', text:'Semua Supplier'}, ...suppliers], ui.filter?.supplier || 'all', 'suppliers')}
-                ${createMasterDataSelect('filter-category', 'Kategori', [
-                    { value:'all', text:'Semua Kategori' }, { value:'operasional', text:'Operasional' }, { value:'material', text:'Material' }, { value:'lainnya', text:'Lainnya' }
-                ], ui.filter?.category || 'all')}
-                ${createMasterDataSelect('filter-status', 'Status Tagihan', [
-                    { value:'all', text:'Semua' }, { value:'unpaid', text:'Belum Lunas' }, { value:'paid', text:'Lunas' }
-                ], ui.filter?.status || 'all')}
-                ${createMasterDataSelect('filter-jenis', 'Jenis', [
-                    { value:'all', text:'Semua' }, { value:'gaji', text:'Gaji' }, { value:'non_gaji', text:'Non-Gaji' }
-                ], ui.filter?.jenis || 'all')}
-            `;
-            return `<div class="modal-content"><div class="modal-header"><h4>Filter Tagihan</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body">${wrap(filterContent)}</div></div>`;
-        }
-        if (modalType === 'billsSort') {
-            const ui = appState.billsUI || { sort:'date_desc' };
-            const option = (value, label) => `<label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0;"><input type="radio" name="bills-sort" value="${value}" ${ui.sort===value?'checked':''}> <span>${label}</span></label>`;
-            const content = `
-                ${option('date_desc','Tanggal Terbaru')}
-                ${option('date_asc','Tanggal Terlama')}
-                ${option('amount_desc','Nominal Terbesar')}
-                ${option('amount_asc','Nominal Terkecil')}
-                ${option('supplier_az','Supplier A-Z')}
-            `;
-            return `<div class="modal-content" style="max-width:420px"><div class="modal-header"><h4>Urutkan</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body"><form id="bills-sort-form">${content}<div class="modal-footer"><button type="button" class="btn btn-secondary" data-close-modal>Batal</button><button type="submit" class="btn btn-primary">Terapkan</button></div></form></div></div>`;
-        }
-        if (modalType === 'rekapFilter') {
-            const professions = appState.professions.map(p => ({ value: p.id, text: p.professionName }));
-            const ui = appState.rekapUI || { filter:{ profession:'all' } };
-            const wrap = (inner) => `<form id="rekap-filter-form">${inner}<div class="modal-footer"><button type="button" class="btn btn-secondary" data-close-modal>Batal</button><button type="submit" class="btn btn-primary">Terapkan</button></div></form>`;
-            const content = `${createMasterDataSelect('filter-profession', 'Profesi', [{value:'all', text:'Semua Profesi'}, ...professions], ui.filter?.profession || 'all', 'professions')}`;
-            return `<div class="modal-content"><div class="modal-header"><h4>Filter Rekap Gaji</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body">${wrap(content)}</div></div>`;
-        }
-        if (modalType === 'rekapSort') {
-            const ui = appState.rekapUI || { sort:'total_desc' };
-            const option = (v,l) => `<label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0;"><input type="radio" name="rekap-sort" value="${v}" ${ui.sort===v?'checked':''}><span>${l}</span></label>`;
-            const content = `
-                ${option('total_desc','Total Upah Terbesar')}
-                ${option('total_asc','Total Upah Terkecil')}
-                ${option('name_az','Nama A-Z')}
-                ${option('name_za','Nama Z-A')}
-            `;
-            return `<div class="modal-content" style="max-width:420px"><div class="modal-header"><h4>Urutkan Rekap</h4><button class="btn-icon" data-close-modal><span class="material-symbols-outlined">close</span></button></div><div class="modal-body"><form id="rekap-sort-form">${content}<div class="modal-footer"><button type="button" class="btn btn-secondary" data-close-modal>Batal</button><button type="submit" class="btn btn-primary">Terapkan</button></div></form></div></div>`;
+        if (type === 'invoiceItemsDetail') {
+            const { items, totalAmount } = data;
+            const itemsHTML = items.map(item => `
+                <div>
+                    <dt>${item.name} (${item.qty} x ${fmtIDR(item.price)})</dt>
+                    <dd>${fmtIDR(item.total)}</dd>
+                </div>
+            `).join('');
+    
+            return modalWithHeader('Rincian Faktur', `
+                <dl class="detail-list">
+                    ${itemsHTML}
+                    <div class="summary-row final">
+                        <dt>Total</dt>
+                        <dd>${fmtIDR(totalAmount)}</dd>
+                    </div>
+                </dl>
+            `);
         }
         return `<div>Konten tidak ditemukan</div>`;
     }
- function attachModalEventListeners(modalType, data, closeModalFunc) {
-        if (modalType === 'login') {
+    
+    function attachModalEventListeners(type, data, closeModalFunc) {
+        if (type === 'login') {
             const googleLoginBtn = $('#google-login-btn');
             if (googleLoginBtn) googleLoginBtn.addEventListener('click', signInWithGoogle);
         }
-        if (modalType === 'confirmLogout') {
+        if (type === 'confirmLogout') {
             const logoutBtn = $('#confirm-logout-btn');
             if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
         }
-        if (modalType.startsWith('confirm') && modalType !== 'confirmExpense') {
+        if (type.startsWith('confirm') && type !== 'confirmExpense') {
             const confirmBtn = $('#confirm-btn');
             if (confirmBtn) confirmBtn.addEventListener('click', () => { data.onConfirm(); closeModalFunc(); });
         }
         
-        if (modalType === 'confirmExpense') {
+        if (type === 'confirmExpense') {
             const paidBtn = $('#confirm-paid-btn');
             if (paidBtn) paidBtn.addEventListener('click', () => { data.onConfirm('paid'); closeModalFunc(); });
             const billBtn = $('#confirm-bill-btn');
             if (billBtn) billBtn.addEventListener('click', () => { data.onConfirm('unpaid'); closeModalFunc(); });
         }
-        if (modalType === 'payment') {
+        if (type === 'payment') {
             const paymentForm = $('#payment-form');
             if (paymentForm) {
                 paymentForm.addEventListener('submit', (e) => {
@@ -409,34 +377,34 @@ async function main() {
                 paymentForm.querySelectorAll('input[inputmode="numeric"]').forEach(input => input.addEventListener('input', _formatNumberInput));
             }
         }
-        if (modalType === 'actionsMenu') {
+        if (type === 'actionsMenu') {
             $$('.actions-menu-item').forEach(btn => btn.addEventListener('click', () => closeModalFunc()));
         }
-        if (modalType === 'manageMaster') {
+        if (type === 'manageMaster') {
             $('#add-master-item-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 handleAddMasterItem(e.target);
             });
-            _initCustomSelects($(`#${modalType}-modal`));
-            $$('input[inputmode="numeric"]', $(`#${modalType}-modal`)).forEach(i => i.addEventListener('input', _formatNumberInput));
+            _initCustomSelects($(`#${type}-modal`));
+            $$('input[inputmode="numeric"]', $(`#${type}-modal`)).forEach(i => i.addEventListener('input', _formatNumberInput));
         }
-        if (modalType === 'editMaster') {
+        if (type === 'editMaster') {
             $('#edit-master-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 createModal('confirmEdit', { onConfirm: () => { handleUpdateMasterItem(e.target); closeModalFunc(); } });
             });
-            _initCustomSelects($(`#${modalType}-modal`));
-            $$('input[inputmode="numeric"]', $(`#${modalType}-modal`)).forEach(i => i.addEventListener('input', _formatNumberInput));
+            _initCustomSelects($(`#${type}-modal`));
+            $$('input[inputmode="numeric"]', $(`#${type}-modal`)).forEach(i => i.addEventListener('input', _formatNumberInput));
         }
-        if (modalType === 'editItem') {
-            _initCustomSelects($(`#${modalType}-modal`));
-            $$(`#${modalType}-modal input[inputmode="numeric"]`).forEach(input => input.addEventListener('input', _formatNumberInput));
+        if (type === 'editItem') {
+            _initCustomSelects($(`#${type}-modal`));
+            $$(`#${type}-modal input[inputmode="numeric"]`).forEach(input => input.addEventListener('input', _formatNumberInput));
             $('#edit-item-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 createModal('confirmEdit', { onConfirm: () => { handleUpdateItem(e.target); closeModalFunc(); } });
             });
         }
-        if (modalType === 'editAttendance') {
+        if (type === 'editAttendance') {
             $('#edit-attendance-form')?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 createModal('confirmEdit', { onConfirm: () => { handleUpdateAttendance(e.target); closeModalFunc(); } });
@@ -456,7 +424,7 @@ async function main() {
     try {
         const redirectRes = await getRedirectResult(auth);
         if (redirectRes && redirectRes.user) {
-            
+            toast('success', 'Login berhasil. Menyiapkan akun...');
         }
     } catch (error) {
         console.error("Error processing redirect result:", error);
@@ -518,7 +486,7 @@ async function main() {
         try {
             // Coba popup terlebih dahulu di semua platform; fallback ke redirect hanya bila perlu
             await signInWithPopup(auth, provider);
-            
+            toast('success', 'Login berhasil. Menyiapkan akun...');
         } catch (err) {
             // Jika popup dibatalkan/ada permintaan lain, biarkan alur onAuthStateChanged yang menangani
             if (err && err.code === 'auth/cancelled-popup-request') {
@@ -596,7 +564,7 @@ async function main() {
         appState.currentUser = user;
         const userDocRef = doc(membersCol, user.uid);
         try {
-            
+            toast('syncing', 'Menyiapkan profil...');
             let userDoc = await getDoc(userDocRef);
 
             if (!userDoc.exists()) {
@@ -645,38 +613,17 @@ async function main() {
         }
     }
     
-    async function renderPageContent() {
-        const pageId = appState.activePage;
-        const container = $('.page-container');
-        if (!container) return;
-        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
-        const pageRenderers = {
-            'dashboard': renderDashboardPage,
-            'pengaturan': renderPengaturanPage,
-            'pemasukan': renderPemasukanPage,
-            'pengeluaran': renderPengeluaranPage,
-            'tagihan': renderTagihanPage,
-            'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
-            'laporan': renderLaporanPage,
-            'absensi': renderAbsensiPage,
-            'log_aktivitas': renderLogAktivitasPage,
-        };
-        const renderer = pageRenderers[pageId];
-        if (renderer) {
-            await renderer();
-            container.classList.remove('fade-in'); void container.offsetWidth; container.classList.add('fade-in');
-        } else {
-            container.innerHTML = `<div class="card card-pad">Halaman <strong>${pageId}</strong> dalam pengembangan.</div>`;
-        }
-    }
-
     function renderUI() {
+        const header = document.querySelector('.main-header');
         if (!appState.currentUser) {
+            if (header) header.style.display = 'none';
             $('#bottom-nav').innerHTML = '';
             renderGuestLanding();
             return;
+        } else {
+            if (header) header.style.display = '';
         }
-        updatePageLabel();
+        updateHeaderTitle();
         renderBottomNav();
         updateNavActiveState();
         if (appState.userStatus !== 'active') {
@@ -692,153 +639,224 @@ async function main() {
         const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
         pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
     }
-    function updatePageLabel() {
-        const pageLabelEl = $('#page-label-name');
-        if (!pageLabelEl) return;
-        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
-        const pageName = currentPageLink ? currentPageLink.label : 'Halaman';
-        pageLabelEl.textContent = pageName;
-    }
 
     function renderBottomNav() {
         const nav = $('#bottom-nav');
         if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
 
-    let navIdsToShow = [];
-    if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
-    else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
-    else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
-
-    const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
-
-    nav.innerHTML = accessibleLinks.map(item => `
-        <button class="nav-item" data-action="navigate" data-nav="${item.id}" aria-label="${item.label}">
-            ${item.id === 'pengaturan' && appState.userRole === 'Owner' && appState.pendingUsersCount > 0 ? `<span class="notification-badge">${appState.pendingUsersCount}</span>` : ''}
-            <span class="material-symbols-outlined">${item.icon}</span>
-            <span class="nav-text">${item.label}</span>
-        </button>
-    `).join('');
-}
-
-    function _initDashboardPTR(onRefresh) {
-        const ptr = $('#ptr');
-        const wrapper = $('.content-wrapper');
-        const container = document.scrollingElement || document.documentElement;
-        if (!ptr || appState.activePage !== 'dashboard') return;
-        let startY = 0, pulling = false, triggered = false;
-        const threshold = 38; // px (smaller pull distance)
-        const maxPull = threshold + 5; // tight limit above label
-
-        const onStart = (e) => {
-            if (container.scrollTop > 0) return;
-            startY = e.touches ? e.touches[0].clientY : e.clientY;
-            pulling = true; triggered = false;
-            ptr.classList.remove('ptr-loading', 'ptr-ready');
-        };
-        const onMove = (e) => {
-            if (!pulling) return;
-            // Prevent native pull-to-refresh
-            try { if (container.scrollTop <= 0) e.preventDefault(); } catch(_) {}
-            const currentY = e.touches ? e.touches[0].clientY : e.clientY;
-            let dy = currentY - startY;
-            if (dy < 0) dy = 0;
-            dy = Math.min(maxPull, dy);
-            // Move PTR to edge and shift content wrapper only within expand range
-            ptr.style.transform = `translateY(${dy}px)`;
-            if (wrapper) wrapper.style.transform = `translateY(${dy}px)`;
-            const icon = $('.ptr-icon'); if (icon) icon.style.transform = `rotate(${dy * 4}deg)`; // slightly faster spin
-            if (dy > threshold) ptr.classList.add('ptr-ready'); else ptr.classList.remove('ptr-ready');
-        };
-        const onEnd = () => {
-            if (!pulling) return; pulling = false;
-            const ready = ptr.classList.contains('ptr-ready');
-            if (ready && !triggered) {
-                triggered = true; ptr.classList.add('ptr-loading');
-                ptr.style.transform = `translateY(${threshold}px)`;
-                if (wrapper) wrapper.style.transform = `translateY(${threshold}px)`;
-                const MIN_HOLD = 180; // minimal hold so it's responsive
-                const MAX_HOLD = 1000; // safety cap
-                const started = performance.now();
-                let cleaned = false;
-                const cleanup = () => {
-                    if (cleaned) return; cleaned = true;
-                    ptr.classList.remove('ptr-loading', 'ptr-ready');
-                    ptr.style.transform = '';
-                    if (wrapper) wrapper.style.transform = '';
-                };
-                const finishWhenReady = () => {
-                    const elapsed = performance.now() - started;
-                    const delay = Math.max(0, MIN_HOLD - elapsed);
-                    setTimeout(cleanup, delay);
-                };
-                try {
-                    const res = onRefresh && onRefresh();
-                    if (res && typeof res.then === 'function') {
-                        res.then(finishWhenReady).catch(() => cleanup());
-                    } else {
-                        // No promise returned; fallback to quick finish with min hold
-                        finishWhenReady();
-                    }
-                } catch(_) {
-                    cleanup();
-                }
-                // Safety max hold
-                setTimeout(cleanup, MAX_HOLD);
-            } else {
-                ptr.classList.remove('ptr-ready');
-                ptr.style.transform = '';
-                if (wrapper) wrapper.style.transform = '';
-            }
-        };
-
-        window.addEventListener('touchstart', onStart, { passive: true });
-        window.addEventListener('touchmove', onMove, { passive: false });
-        window.addEventListener('touchend', onEnd, { passive: true });
+        let navIdsToShow = [];
+        if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
+        else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
+        else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
+        
+        const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
+        
+        nav.innerHTML = accessibleLinks.map(item => `
+            <button class="nav-item" data-action="navigate" data-nav="${item.id}" aria-label="${item.label}">
+                ${item.id === 'pengaturan' && appState.userRole === 'Owner' && appState.pendingUsersCount > 0 ? `<span class="notification-badge">${appState.pendingUsersCount}</span>` : ''}
+                <span class="material-symbols-outlined">${item.icon}</span>
+                <span class="nav-text">${item.label}</span>
+            </button>
+        `).join('');
     }
 
     function updateNavActiveState() {
-        try {
-            const items = $$('.nav-item');
-            if (!items || items.length === 0) return;
-            items.forEach(el => el.classList.remove('active'));
-            const current = $(`.nav-item[data-nav="${appState.activePage}"]`);
-            if (current) current.classList.add('active');
-        } catch (e) {
-            console.warn('updateNavActiveState failed:', e);
+        $$('.nav-item').forEach(item => item.classList.remove('active'));
+        $$(`.nav-item[data-nav="${appState.activePage}"]`).forEach(el => el.classList.add('active'));
+    }
+
+    function renderGuestLanding() {
+        const container = $('.page-container');
+        container.innerHTML = `
+            <div class="card card-pad" style="max-width:520px;margin:3rem auto;text-align:center;">
+                <img src="logo-main.png" alt="BanPlex" style="width:120px;height:auto;margin-bottom:1rem;" />
+                <p style="margin:.5rem 0 1rem 0">Masuk untuk melanjutkan.</p>
+                <button id="google-login-btn" class="btn btn-primary" data-action="auth-action" style="display:inline-flex;align-items:center;gap:.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12 s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C33.109,6.053,28.805,4,24,4C12.955,4,4,12.955,4,24 s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.817C14.655,16.108,18.961,13,24,13c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657 C33.109,6.053,28.805,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.191-5.238C29.211,35.091,26.715,36,24,36 c-5.202,0-9.619-3.317-11.283-7.957l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.793,2.239-2.231,4.166-4.094,5.57 c0.001-0.001,0.002-0.001,0.003-0.002l6.191,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+                    <span>Masuk dengan Google</span>
+                </button>
+            </div>`;
+        // Pastikan listener terpasang pada tombol baru
+        const googleLoginBtn = $('#google-login-btn');
+        if (googleLoginBtn) googleLoginBtn.addEventListener('click', signInWithGoogle);
+    }
+    
+    function renderPendingLanding() {
+        $('#bottom-nav').innerHTML = '';
+        $('.page-container').innerHTML = `<div class="card card-pad" style="max-width:520px;margin:2rem auto;text-align:center;"><h4>Menunggu Persetujuan</h4><p>Akun Anda sedang ditinjau oleh Owner. Silakan hubungi Owner untuk persetujuan.</p></div>`;
+    }
+    
+    async function renderPageContent() {
+        const pageId = appState.activePage;
+        const container = $('.page-container');
+        const pageRenderers = {
+            'dashboard': renderDashboardPage,
+            'pengaturan': renderPengaturanPage,
+            'pemasukan': renderPemasukanPage,
+            'pengeluaran': renderPengeluaranPage,
+            'tagihan': renderTagihanPage,
+            'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
+            'laporan': renderLaporanPage,
+            'absensi': renderAbsensiPage,
+            'log_aktivitas': renderLogAktivitasPage,
+        };
+        
+        container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
+        const renderer = pageRenderers[pageId];
+        if (renderer) {
+            await renderer();
+        } else {
+            container.innerHTML = `<div class="card card-pad">Halaman <strong>${pageId}</strong> dalam pengembangan.</div>`;
         }
+    }
+    
+    function updateHeaderTitle() {
+        const pageTitleEl = $('#header-page-title');
+        if (!pageTitleEl) return;
+
+        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
+        const pageName = currentPageLink ? currentPageLink.label : 'Halaman';
+        pageTitleEl.textContent = pageName;
+    }
+
+    const fetchData = async (key, col, order = 'createdAt') => {
+        appState[key] = [];
+        try {
+            const snap = await getDocs(query(col, orderBy(order, 'desc')));
+            appState[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) { console.error(`Failed to fetch ${key}:`, e); toast('error', `Gagal memuat data ${key}.`); }
+    };
 
     async function renderDashboardPage() {
         const container = $('.page-container');
-        if (!container) return;
+        container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
+    
+        // 1. Fetch data
+        await Promise.all([
+            fetchData('projects', projectsCol, 'projectName'), 
+            fetchData('incomes', incomesCol), 
+            fetchData('expenses', expensesCol), 
+            fetchData('bills', billsCol)
+        ]);
+        
+        // 2. Lakukan Kalkulasi
+        const mainProject = appState.projects.find(p => p.projectType === 'main_income');
+        const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
+        const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
+        const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
+        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
+        const hpp = hpp_material + hpp_gaji;
+        const labaKotor = pendapatan - hpp;
+        const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
+        const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        const labaBersih = labaKotor - bebanOperasional - bebanInternal;
+        const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
+    
+        const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
+            const actual = appState.expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
+            const remaining = p.budget - actual;
+            const percentage = p.budget > 0 ? (actual / p.budget) * 100 : 0;
+            return { ...p, actual, remaining, percentage };
+        });
+    
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todaysExpenses = appState.expenses.filter(e => e.date.toDate() >= today);
+        const dailyRecap = todaysExpenses.reduce((recap, expense) => {
+            const projectName = appState.projects.find(p => p.id === expense.projectId)?.projectName || 'Lainnya';
+            if (!recap[projectName]) recap[projectName] = 0;
+            recap[projectName] += expense.amount;
+            return recap;
+        }, {});
+    
+        const balanceCardsHTML = `
+            <div class="dashboard-balance-grid">
+                <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="laporan">
+                    <span class="label">Estimasi Laba Bersih</span>
+                    <strong class="value positive">${fmtIDR(labaBersih)}</strong>
+                </div>
+                <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="tagihan">
+                    <span class="label">Tagihan Belum Lunas</span>
+                    <strong class="value negative">${fmtIDR(totalUnpaid)}</strong>
+                </div>
+            </div>`;
+    
+        const projectBudgetHTML = `
+            <h5 class="section-title-owner">Sisa Anggaran Proyek</h5>
+            <div class="card card-pad">
+                ${projectsWithBudget.length > 0 ? projectsWithBudget.map(p => `
+                    <div class="budget-item">
+                        <div class="budget-info">
+                            <span class="project-name">${p.projectName}</span>
+                            <strong class="remaining-amount ${p.remaining < 0 ? 'negative' : ''}">${fmtIDR(p.remaining)}</strong>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${Math.min(p.percentage, 100)}%; background-color: ${p.percentage > 100 ? 'var(--danger)' : 'var(--info)'};"></div>
+                        </div>
+                        <div class="budget-details">
+                            <span>Terpakai: ${fmtIDR(p.actual)}</span>
+                            <span>Anggaran: ${fmtIDR(p.budget)}</span>
+                        </div>
+                    </div>
+                `).join('') : '<p class="empty-state-small">Tidak ada proyek dengan anggaran.</p>'}
+            </div>`;
+    
+        const dailyRecapHTML = `
+             <h5 class="section-title-owner">Rekap Pengeluaran Hari Ini</h5>
+             <div class="card card-pad">
+                ${Object.keys(dailyRecap).length > 0 ? Object.entries(dailyRecap).map(([projectName, total]) => `
+                    <div class="daily-recap-item">
+                        <span>${projectName}</span>
+                        <strong>${fmtIDR(total)}</strong>
+                    </div>
+                `).join('') : '<p class="empty-state-small">Tidak ada pengeluaran hari ini.</p>'}
+             </div>`;
+    
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
-        const desiredOrder = ['tagihan','laporan','pengeluaran'];
-        const byId = new Map(accessibleLinks.map(l => [l.id, l]));
-        const primaryOrdered = desiredOrder.map(id => byId.get(id)).filter(Boolean);
-        const remaining = accessibleLinks.filter(l => !primaryOrdered.some(p => p.id === l.id));
-        const primary = (primaryOrdered.length > 0 ? primaryOrdered : accessibleLinks).slice(0,3);
-        const rest = remaining;
-        const showAll = !!appState.dashboardActionsExpanded;
-        const visible = showAll ? accessibleLinks : primary;
-        const moreTile = rest.length > 0 ? `
-            <button class="dashboard-action-item" data-action="toggle-actions">
-                <div class="icon-wrapper"><span class="material-symbols-outlined">${showAll ? 'expand_less' : 'more_horiz'}</span></div>
-                <span class="label">${showAll ? 'Lebih Sedikit' : 'Lainnya'}</span>
-            </button>` : '';
-        const gridTiles = visible.map(link => `
-            <button class="dashboard-action-item" data-action="navigate" data-nav="${link.id}">
+        
+        // Definisikan aksi utama dan tambahan
+        const mainActionIds = ['tagihan', 'laporan', 'stok'];
+        const mainActions = [];
+        const extraActions = [];
+    
+        // Pisahkan link berdasarkan urutan yang ditentukan
+        accessibleLinks.forEach(link => {
+            if (mainActionIds.includes(link.id)) {
+                mainActions.push(link);
+            } else {
+                extraActions.push(link);
+            }
+        });
+    
+        // Urutkan aksi utama sesuai urutan
+        mainActions.sort((a, b) => mainActionIds.indexOf(a.id) - mainActionIds.indexOf(b.id));
+    
+        const createActionItemHTML = (link, isExtra = false) => `
+            <button class="dashboard-action-item ${isExtra ? 'action-item-extra' : ''}" data-action="navigate" data-nav="${link.id}">
                 <div class="icon-wrapper"><span class="material-symbols-outlined">${link.icon}</span></div>
                 <span class="label">${link.label}</span>
-            </button>
-        `).join('') + (moreTile ? moreTile : '');
-
+            </button>`;
+    
         const quickActionsHTML = `
             <h5 class="section-title-owner">Aksi Cepat</h5>
-            <div class="dashboard-actions-grid fade-in">${gridTiles}</div>`;
-
-        container.innerHTML = quickActionsHTML;
+            <div class="card card-pad quick-actions-card">
+                <div id="quick-actions-grid" class="dashboard-actions-grid actions-collapsed">
+                    ${mainActions.map(link => createActionItemHTML(link)).join('')}
+                    
+                    ${extraActions.length > 0 ? `
+                        <button class="dashboard-action-item" data-action="toggle-more-actions">
+                            <div class="icon-wrapper"><span class="material-symbols-outlined">more_horiz</span></div>
+                            <span class="label">Lainnya</span>
+                        </button>
+                    ` : ''}
+    
+                    ${extraActions.map(link => createActionItemHTML(link, true)).join('')}
+                </div>
+            </div>`;
+    
+        container.innerHTML = balanceCardsHTML + quickActionsHTML + projectBudgetHTML + dailyRecapHTML;
     }
-
-    async function renderPengaturanPage() {
+        async function renderPengaturanPage() {
         const container = $('.page-container');
         const { currentUser, userRole } = appState;
         const photo = currentUser?.photoURL || `https://placehold.co/80x80/e2e8f0/64748b?text=${(currentUser?.displayName||'U')[0]}`;
@@ -1233,22 +1251,10 @@ async function main() {
         }
     }
     
-async function renderTagihanPage() {
+    async function renderTagihanPage() {
         const container = $('.page-container');
-        // Guard: avoid accidental reference errors from legacy code
-        let type;
         const tabs = [{id:'belum_lunas', label:'Belum Lunas'}, {id:'lunas', label:'Lunas'}, {id:'gaji', label:'Gaji'}];
-        const toolbarHTML = `
-            <div class="toolbar">
-                <div class="search">
-                    <span class="material-symbols-outlined">search</span>
-                    <input id="bills-search-input" type="text" placeholder="Cari tagihan..." value="${appState.billsUI?.search || ''}">
-                </div>
-                <button class="icon-btn" title="Filter" data-action="open-bills-filter"><span class="material-symbols-outlined">filter_alt</span></button>
-                <button class="icon-btn" title="Urutkan" data-action="open-bills-sort"><span class="material-symbols-outlined">swap_vert</span></button>
-            </div>`;
         container.innerHTML = `
-            ${toolbarHTML}
             <div class="sub-nav">
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
             </div>
@@ -1282,241 +1288,7 @@ async function renderTagihanPage() {
             const bills = billsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             appState.bills = bills;
 
-            // For Lunas tab, also show paid expenses moved from Pengeluaran
-            if (tabId === 'lunas') {
-                try {
-                    // Ensure suppliers are loaded to show supplier names
-                    await fetchData('suppliers', suppliersCol, 'supplierName');
-                } catch(e) { /* noop */ }
-
-                // Fetch paid expenses and exclude those already represented by paid bills
-                let expensesPaid = [];
-                try {
-                    const expQ = query(expensesCol, where('status', '==', 'paid'));
-                    const expSnap = await getDocs(expQ);
-                    expensesPaid = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                } catch(e) { console.warn('Fetch paid expenses failed', e); }
-
-                // Exclude expenses that are already shown as bills (expenseId in bills)
-                const expenseIdsInPaidBills = new Set(bills.filter(b => b.expenseId).map(b => b.expenseId));
-                const standalonePaidExpenses = expensesPaid.filter(e => !expenseIdsInPaidBills.has(e.id));
-
-                // Build combined list HTML (bills first, then expenses)
-                // Resolve supplier names for bills
-                let supplierByBillId = new Map();
-                let supplierIdByBillId = new Map();
-                try {
-                    const expenseIds = Array.from(new Set(bills.map(b => b.expenseId).filter(Boolean)));
-                    const expenseMap = new Map();
-                    await Promise.all(expenseIds.map(async (eid) => {
-                        try {
-                            const snap = await getDoc(doc(expensesCol, eid));
-                            if (snap.exists()) expenseMap.set(eid, snap.data());
-                        } catch (_) {}
-                    }));
-                    supplierByBillId = new Map(bills.map(b => {
-                        if (!b.expenseId) return [b.id, null];
-                        const exp = expenseMap.get(b.expenseId);
-                        const supplier = exp ? appState.suppliers.find(s => s.id === exp.supplierId) : null;
-                        return [b.id, supplier ? supplier.supplierName : null];
-                    }));
-                    supplierIdByBillId = new Map(bills.map(b => {
-                        if (!b.expenseId) return [b.id, null];
-                        const exp = expenseMap.get(b.expenseId);
-                        return [b.id, exp?.supplierId || null];
-                    }));
-                } catch (e) { /* noop */ }
-
-                // Apply global filters/sort to paid bills
-                const ui = appState.billsUI || { search:'', filter:{}, sort:'date_desc' };
-                const filteredBills = bills.filter(b => {
-                    if (ui.filter.jenis && ui.filter.jenis !== 'all') {
-                        const isGaji = b.type === 'gaji';
-                        if (ui.filter.jenis === 'gaji' && !isGaji) return false;
-                        if (ui.filter.jenis === 'non_gaji' && isGaji) return false;
-                    }
-                    if (ui.filter.category && ui.filter.category !== 'all' && b.type !== 'gaji') {
-                        if (b.type !== ui.filter.category) return false;
-                    }
-                    if (ui.filter.supplier && ui.filter.supplier !== 'all') {
-                        if (supplierIdByBillId.get(b.id) !== ui.filter.supplier) return false;
-                    }
-                    const qtxt = (ui.search||'').toLowerCase();
-                    if (qtxt) {
-                        const sup = (supplierByBillId.get(b.id)||'').toLowerCase();
-                        const desc = (b.description||'').toLowerCase();
-                        if (!sup.includes(qtxt) && !desc.includes(qtxt)) return false;
-                    }
-                    return true;
-                }).sort((a,b)=>{
-                    switch(ui.sort){
-                        case 'date_asc': return (a.dueDate?.toMillis?.()||0)-(b.dueDate?.toMillis?.()||0);
-                        case 'amount_desc': return (b.amount||0)-(a.amount||0);
-                        case 'amount_asc': return (a.amount||0)-(b.amount||0);
-                        case 'supplier_az': return (supplierByBillId.get(a.id)||'').localeCompare(supplierByBillId.get(b.id)||'');
-                        default: return (b.dueDate?.toMillis?.()||0)-(a.dueDate?.toMillis?.()||0);
-                    }
-                });
-
-                const billsHTML = (() => {
-                    if (filteredBills.length === 0) return '';
-                    return filteredBills.map(item => {
-                        const date = item.dueDate?.toDate ? item.dueDate.toDate().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : 'Tanggal tidak valid';
-                        const remainingAmount = (item.amount || 0) - (item.paidAmount || 0);
-                        const isPaid = remainingAmount <= 0;
-                        let secondaryInfoHTML = '';
-                        if (isPaid) {
-                            secondaryInfoHTML = `<div class="paid-indicator"><span class="material-symbols-outlined">task_alt</span> Lunas</div>`;
-                        } else if (item.paidAmount > 0) {
-                             secondaryInfoHTML = `<p class="card-list-item-repayment-info">Sisa: <strong>${fmtIDR(remainingAmount)}</strong></p>`;
-                        } else {
-                            secondaryInfoHTML = `<p class="card-list-item-repayment-info" style="color:var(--warn)">Belum Dibayar</p>`
-                        }
-                        const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-                        const categoryBadge = (item.type && item.type !== 'gaji') ? `<div class="card-list-item-badges"><span class="category-badge category-${item.type}">${cap(item.type)}</span></div>` : '';
-                        const supplierName = (item.type !== 'gaji') ? (supplierByBillId.get(item.id) || null) : null;
-                        const titleText = supplierName || item.description;
-                        return `
-                        <div class="card card-list-item" data-id="${item.id}" data-type="bill" data-expense-id="${item.expenseId || ''}">
-                            <div class="card-list-item-content" data-action="open-bill-detail">
-                                <div class="card-list-item-details">
-                                    <h5 class="card-list-item-title">${titleText}</h5>
-                                    <p class="card-list-item-subtitle">${date}</p>
-                                    ${categoryBadge}
-                                </div>
-                                <div class="card-list-item-amount-wrapper">
-                                    <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
-                                    ${secondaryInfoHTML}
-                                </div>
-                            </div>
-                            ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
-                                <span class="material-symbols-outlined">more_vert</span>
-                            </button>`}
-                        </div>`;
-                    }).join('');
-                })();
-
-                const expensesHTML = (() => {
-                    // filter/sort standalone expenses
-                    const uiL = appState.billsUI || { search:'', filter:{}, sort:'date_desc' };
-                    let list = standalonePaidExpenses.filter(e => {
-                        if (uiL.filter.jenis === 'gaji') return false;
-                        if (uiL.filter.category && uiL.filter.category !== 'all') {
-                            if (e.type !== uiL.filter.category) return false;
-                        }
-                        if (uiL.filter.supplier && uiL.filter.supplier !== 'all') {
-                            if (e.supplierId !== uiL.filter.supplier) return false;
-                        }
-                        const qtxt = (uiL.search||'').toLowerCase();
-                        if (qtxt) {
-                            const sup = (appState.suppliers.find(s=>s.id===e.supplierId)?.supplierName||'').toLowerCase();
-                            const desc = (e.description||'').toLowerCase();
-                            if (!sup.includes(qtxt) && !desc.includes(qtxt)) return false;
-                        }
-                        return true;
-                    }).sort((a,b)=>{
-                        switch(uiL.sort){
-                            case 'date_asc': return (a.date?.toDate?.().getTime?.()||0)-(b.date?.toDate?.().getTime?.()||0);
-                            case 'amount_desc': return (b.amount||0)-(a.amount||0);
-                            case 'amount_asc': return (a.amount||0)-(b.amount||0);
-                            case 'supplier_az': return (appState.suppliers.find(s=>s.id===a.supplierId)?.supplierName||'').localeCompare(appState.suppliers.find(s=>s.id===b.supplierId)?.supplierName||'');
-                            default: return (b.date?.toDate?.().getTime?.()||0)-(a.date?.toDate?.().getTime?.()||0);
-                        }
-                    });
-                    if (list.length === 0) return '';
-                    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-                    const getSupplierName = (item) => {
-                        const supplier = appState.suppliers.find(s => s.id === item.supplierId);
-                        return supplier ? supplier.supplierName : 'Tidak Diketahui';
-                    };
-                    return list.map(item => {
-                        const dateStr = item.date?.toDate ? item.date.toDate().toLocaleDateString('id-ID') : '';
-                        const supplierName = getSupplierName(item);
-                        return `
-                        <div class="card card-list-item" data-id="${item.id}" data-type="expense">
-                            <div class="card-list-item-content" data-action="open-bill-detail">
-                                <div class="card-list-item-details">
-                                    <h5 class="card-list-item-title">${supplierName}</h5>
-                                    <p class="card-list-item-subtitle">${dateStr}</p>
-                                    <div class="card-list-item-badges"><span class="category-badge category-${item.type}">${cap(item.type)}</span></div>
-                                </div>
-                                <div class="card-list-item-amount-wrapper">
-                                    <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
-                                    <div class="paid-indicator"><span class="material-symbols-outlined">task_alt</span> Lunas</div>
-                                </div>
-                            </div>
-                            ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
-                                <span class="material-symbols-outlined">more_vert</span>
-                            </button>`}
-                        </div>`;
-                    }).join('');
-                })();
-
-                const combined = billsHTML + expensesHTML;
-                contentContainer.innerHTML = combined || `<p class="empty-state">Tidak ada tagihan yang sudah lunas.</p>`;
-                contentContainer.classList.remove('fade-in'); void contentContainer.offsetWidth; contentContainer.classList.add('fade-in');
-                return;
-            }
-
-            // Build supplier map for bill headers (show supplier as title) and filter/sort for non-Lunas
-            let supplierByBillId = new Map();
-            let supplierIdByBillId = new Map();
-            try {
-                await fetchData('suppliers', suppliersCol, 'supplierName');
-                const expenseIds = Array.from(new Set(bills.map(b => b.expenseId).filter(Boolean)));
-                const expenseMap = new Map();
-                await Promise.all(expenseIds.map(async (eid) => {
-                    try {
-                        const snap = await getDoc(doc(expensesCol, eid));
-                        if (snap.exists()) expenseMap.set(eid, snap.data());
-                    } catch(_) {}
-                }));
-                supplierByBillId = new Map(bills.map(b => {
-                    if (!b.expenseId) return [b.id, null];
-                    const exp = expenseMap.get(b.expenseId);
-                    const supplier = exp ? appState.suppliers.find(s => s.id === exp.supplierId) : null;
-                    return [b.id, supplier ? supplier.supplierName : null];
-                }));
-                supplierIdByBillId = new Map(bills.map(b => {
-                    if (!b.expenseId) return [b.id, null];
-                    const exp = expenseMap.get(b.expenseId);
-                    return [b.id, exp?.supplierId || null];
-                }));
-            } catch(e) { /* noop */ }
-
-            const ui = appState.billsUI || { search:'', filter:{}, sort:'date_desc' };
-            let filtered = bills.filter(b => {
-                if (ui.filter.status && ui.filter.status !== 'all' && b.status !== ui.filter.status) return false;
-                if (ui.filter.jenis && ui.filter.jenis !== 'all') {
-                    const isGaji = b.type === 'gaji';
-                    if (ui.filter.jenis === 'gaji' && !isGaji) return false;
-                    if (ui.filter.jenis === 'non_gaji' && isGaji) return false;
-                }
-                if (ui.filter.category && ui.filter.category !== 'all' && b.type !== 'gaji') {
-                    if (b.type !== ui.filter.category) return false;
-                }
-                if (ui.filter.supplier && ui.filter.supplier !== 'all') {
-                    if (supplierIdByBillId.get(b.id) !== ui.filter.supplier) return false;
-                }
-                const q = (ui.search||'').toLowerCase();
-                if (q) {
-                    const sup = (supplierByBillId.get(b.id)||'').toLowerCase();
-                    const desc = (b.description||'').toLowerCase();
-                    if (!sup.includes(q) && !desc.includes(q)) return false;
-                }
-                return true;
-            }).sort((a,b)=>{
-                switch(ui.sort){
-                    case 'date_asc': return (a.dueDate?.toMillis?.()||0)-(b.dueDate?.toMillis?.()||0);
-                    case 'amount_desc': return (b.amount||0)-(a.amount||0);
-                    case 'amount_asc': return (a.amount||0)-(b.amount||0);
-                    case 'supplier_az': return (supplierByBillId.get(a.id)||'').localeCompare(supplierByBillId.get(b.id)||'');
-                    default: return (b.dueDate?.toMillis?.()||0)-(a.dueDate?.toMillis?.()||0);
-                }
-            });
-
-            contentContainer.innerHTML = _getBillsListHTML(filtered, tabId, { supplierByBillId });
-            contentContainer.classList.remove('fade-in'); void contentContainer.offsetWidth; contentContainer.classList.add('fade-in');
+            contentContainer.innerHTML = _getBillsListHTML(bills, tabId);
         }
     
         $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
@@ -1525,17 +1297,10 @@ async function renderTagihanPage() {
             renderTabContent(e.currentTarget.dataset.tab);
         }));
     
-        // Toolbar listeners
-        $('#bills-search-input')?.addEventListener('input', (e) => {
-            appState.billsUI.search = e.target.value || '';
-            const active = $('.sub-nav-item.active')?.dataset.tab || tabs[0].id;
-            renderTabContent(active);
-        });
-
         await renderTabContent(tabs[0].id);
     }
 
-    function _getBillsListHTML(bills, tabId, options = {}) {
+    function _getBillsListHTML(bills, tabId) {
         if (bills.length === 0) {
             let message = 'Tidak ada tagihan';
             if (tabId === 'belum_lunas') message += ' yang perlu dibayar.';
@@ -1560,19 +1325,12 @@ async function renderTagihanPage() {
                     secondaryInfoHTML = `<p class="card-list-item-repayment-info" style="color:var(--warn)">Belum Dibayar</p>`
                 }
 
-                // Tambah badge kategori untuk tagihan non-gaji (termasuk belum lunas)
-                const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-                const categoryBadge = (item.type && item.type !== 'gaji') ? `<div class="card-list-item-badges"><span class="category-badge category-${item.type}">${cap(item.type)}</span></div>` : '';
-                const supplierName = (item.type !== 'gaji') ? (options.supplierByBillId?.get(item.id) || null) : null;
-                const titleText = supplierName || item.description;
-
                 return `
                 <div class="card card-list-item" data-id="${item.id}" data-type="bill" data-expense-id="${item.expenseId || ''}">
                     <div class="card-list-item-content" data-action="open-bill-detail">
                         <div class="card-list-item-details">
-                            <h5 class="card-list-item-title">${titleText}</h5>
+                            <h5 class="card-list-item-title">${item.description}</h5>
                             <p class="card-list-item-subtitle">${date}</p>
-                            ${categoryBadge}
                         </div>
                         <div class="card-list-item-amount-wrapper">
                             <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
@@ -1873,15 +1631,8 @@ async function renderTagihanPage() {
         const expenseSnap = await getDocs(q);
         const expenses = expenseSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         appState.expenses = [...appState.expenses.filter(ex => ex.type !== type), ...expenses];
-
-        // Per permintaan: Jangan tampilkan kartu data apapun pada halaman Pengeluaran.
-        listContainer.innerHTML = `<p class="empty-state-small">Daftar pengeluaran tidak ditampilkan di sini. Silakan lihat menu Tagihan.</p>`;
-        return;
-
-        // Hide paid expense cards here; they are shown in Tagihan > Lunas
-        const visibleExpenses = expenses.filter(item => item.status !== 'paid');
-
-        if (visibleExpenses.length === 0) {
+    
+        if (expenses.length === 0) {
             listContainer.innerHTML = `<p class="empty-state">Belum ada data pengeluaran.</p>`;
             return;
         }
@@ -1894,7 +1645,7 @@ async function renderTagihanPage() {
     
         listContainer.innerHTML = `
             <div style="margin-top: 1.5rem;">
-                ${visibleExpenses.map(item => `
+                ${expenses.map(item => `
                     <div class="card card-list-item" data-id="${item.id}" data-type="expense">
                         <div class="card-list-item-content" data-action="open-bill-detail">
                             <div class="card-list-item-details">
@@ -1903,7 +1654,10 @@ async function renderTagihanPage() {
                             </div>
                             <div class="card-list-item-amount-wrapper">
                                 <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
-                                <p class="card-list-item-repayment-info" style="color:var(--warn)">Tagihan</p>
+                                ${item.status === 'paid' 
+                                    ? `<div class="paid-indicator"><span class="material-symbols-outlined">task_alt</span> Lunas</div>` 
+                                    : `<p class="card-list-item-repayment-info" style="color:var(--warn)">Tagihan</p>`
+                                }
                             </div>
                         </div>
                         ${isViewer() ? '' : `<button class="btn-icon card-list-item-actions-trigger" data-action="open-actions">
@@ -2446,17 +2200,7 @@ async function renderTagihanPage() {
     
     async function renderGenericTabPage(pageId, title, tabs) {
         const container = $('.page-container');
-        const toolbar = `
-            <div class="toolbar">
-                <div class="search">
-                    <span class="material-symbols-outlined">search</span>
-                    <input id="${pageId}-search-input" type="text" placeholder="Cari ${title.toLowerCase()}..." value="${pageId==='stok' ? (appState.stokUI?.search||'') : ''}">
-                </div>
-                <button class="icon-btn" title="Filter" data-action="open-${pageId}-filter"><span class="material-symbols-outlined">filter_alt</span></button>
-                <button class="icon-btn" title="Urutkan" data-action="open-${pageId}-sort"><span class="material-symbols-outlined">swap_vert</span></button>
-            </div>`;
         container.innerHTML = `
-            ${toolbar}
             <div class="sub-nav">
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
             </div>
@@ -2466,7 +2210,6 @@ async function renderTagihanPage() {
         const renderTabContent = async (tabId) => {
             const contentContainer = $('#sub-page-content');
             contentContainer.innerHTML = `<div class="card card-pad"><p>Ini adalah konten untuk <strong>${tabId}</strong>.</p></div>`;
-            contentContainer.classList.remove('fade-in'); void contentContainer.offsetWidth; contentContainer.classList.add('fade-in');
         }
 
         $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
@@ -2474,15 +2217,6 @@ async function renderTagihanPage() {
             e.currentTarget.classList.add('active');
             renderTabContent(e.currentTarget.dataset.tab);
         }));
-
-        // Attach toolbar listeners for stok (placeholder)
-        if (pageId === 'stok') {
-            $('#stok-search-input')?.addEventListener('input', (e) => {
-                appState.stokUI.search = e.target.value || '';
-                const active = $('.sub-nav-item.active')?.dataset.tab || tabs[0].id;
-                renderTabContent(active);
-            });
-        }
 
         await renderTabContent(tabs[0].id);
     }
@@ -2675,24 +2409,24 @@ async function renderTagihanPage() {
         const pageContainer = document.querySelector('.page-container');
         const PTR_THRESHOLD = 70, PTR_MAX = 140;
         let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
-
+    
         function handleSwipeGesture() {
             const deltaX = touchendX - touchstartX;
             const deltaY = touchendY - touchstartY;
-
+    
             if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 100) return;
-
+    
             const container = $('.page-container');
             const activeSubNav = container.querySelector('.sub-nav');
-
+    
             if (activeSubNav) {
                 const tabs = $$('.sub-nav-item', activeSubNav);
                 const activeTabIndex = tabs.findIndex(tab => tab.classList.contains('active'));
                 if (activeTabIndex === -1) return;
-
+    
                 let nextTabIndex = (touchendX < touchstartX) ? activeTabIndex + 1 : activeTabIndex - 1;
                 if (nextTabIndex >= 0 && nextTabIndex < tabs.length) tabs[nextTabIndex].click();
-
+    
             } else {
                 let navIdsToShow = [];
                 if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
@@ -2702,12 +2436,12 @@ async function renderTagihanPage() {
                 const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
                 const currentAccessibleIndex = accessibleLinks.findIndex(link => link.id === appState.activePage);
                 if (currentAccessibleIndex === -1) return;
-
+    
                 let nextNavIndex = (touchendX < touchstartX) ? currentAccessibleIndex + 1 : currentAccessibleIndex - 1;
                 if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) handleNavigation(accessibleLinks[nextNavIndex].id);
             }
         }
-
+    
         function resetPTR(animated = true) {
             ptrPull = 0; ptrActive = false; ptrArmed = false;
             if (ptrEl) {
@@ -2725,7 +2459,7 @@ async function renderTagihanPage() {
                 pageContainer.style.transition = '';
             }
         }
-
+    
         async function performPTRRefresh() {
             try {
                 toast('syncing', 'Memuat...');
@@ -2740,14 +2474,14 @@ async function renderTagihanPage() {
                 resetPTR();
             }
         }
-
+    
         document.body.addEventListener('touchstart', e => {
             touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY;
             const scroller = pageContainer || document.scrollingElement;
             const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
             ptrArmed = atTop; ptrActive = false; ptrPull = 0;
         }, { passive: true });
-
+    
         document.body.addEventListener('touchmove', e => {
             const y = e.changedTouches[0].screenY; const x = e.changedTouches[0].screenX;
             const dy = y - touchstartY; const dx = x - touchstartX;
@@ -2762,7 +2496,7 @@ async function renderTagihanPage() {
             }
             if (pageContainer) pageContainer.style.transform = `translateY(${ptrPull}px)`;
         }, { passive: false });
-
+    
         document.body.addEventListener('touchend', e => {
             touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY;
             if (ptrActive && ptrPull >= PTR_THRESHOLD) {
@@ -2774,13 +2508,13 @@ async function renderTagihanPage() {
             resetPTR();
             handleSwipeGesture();
         }, { passive: false });
-
+    
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
                 $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
                 closeModal($('#actionsMenu-modal'));
             }
-
+    
             const actionTarget = e.target.closest('[data-action]');
             if (!actionTarget) return;
             
@@ -2790,15 +2524,25 @@ async function renderTagihanPage() {
             let manager = actionTarget.closest('.master-data-manager');
             if (manager) type = manager.dataset.type;
             let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
-
+    
             switch (actionTarget.dataset.action) {
-                case 'view-attachment': createModal('imageView', { src: actionTarget.dataset.src }); break;
-                case 'navigate': handleNavigation(navTarget); break;
-                case 'toggle-actions': {
-                    appState.dashboardActionsExpanded = !appState.dashboardActionsExpanded;
-                    if (appState.activePage === 'dashboard') renderDashboardPage();
+                case 'toggle-more-actions':
+                    $('#quick-actions-grid')?.classList.toggle('actions-collapsed');
+                    break;
+                case 'view-invoice-items': {
+                    const expense = appState.expenses.find(e => e.id === id);
+                    if (expense && expense.items) {
+                        createModal('invoiceItemsDetail', {
+                            items: expense.items,
+                            totalAmount: expense.amount
+                        });
+                    } else {
+                        toast('error', 'Rincian item tidak ditemukan.');
+                    }
                     break;
                 }
+                case 'view-attachment': createModal('imageView', { src: actionTarget.dataset.src }); break;
+                case 'navigate': handleNavigation(navTarget); break;
                 case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
                 case 'open-detail': {
                     if (!card) return; e.preventDefault();
@@ -2811,20 +2555,7 @@ async function renderTagihanPage() {
                     }
                     break;
                 }
-                case 'open-bill-detail': {
-                    if (!card) break; e.preventDefault();
-                    if (type === 'expense') {
-                        // Buka detail berdasarkan expenseId langsung
-                        handleOpenBillDetail(null, id);
-                    } else {
-                        handleOpenBillDetail(id, expenseId);
-                    }
-                    break;
-                }
-                case 'open-invoice-items': if (id) { e.preventDefault(); openInvoiceItemsModal(id); } break;
-                case 'open-attachments': if (id) { e.preventDefault(); openAttachmentsModal(id); } break;
-                case 'open-bills-filter': createModal('billsFilter'); break;
-                case 'open-bills-sort': createModal('billsSort'); break;
+                case 'open-bill-detail': if(card) { e.preventDefault(); handleOpenBillDetail(id, expenseId); } break;
                 case 'open-actions': {
                     if (isViewer()) return; e.preventDefault();
                     let actions = [];
@@ -2860,10 +2591,6 @@ async function renderTagihanPage() {
                      if (isViewer()) return;
                      createModal('dataDetail', { title: 'Pilih Master Data', content: `<div class="settings-list">${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `<div class="settings-list-item" data-action="manage-master" data-type="${key}"><div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div><span class="label">${config.title}</span></div>`).join('')}</div>`});
                     break;
-                case 'open-stok-filter': createModal('dataDetail', { title: 'Filter Stok', content: '<p class="empty-state-small">Filter stok akan tersedia saat data stok diaktifkan.</p>' }); break;
-                case 'open-stok-sort': createModal('dataDetail', { title: 'Urutkan Stok', content: '<p class="empty-state-small">Urutkan stok akan tersedia saat data stok diaktifkan.</p>' }); break;
-                case 'open-rekap-filter': createModal('rekapFilter'); break;
-                case 'open-rekap-sort': createModal('rekapSort'); break;
                 case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
                 case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
                 case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
@@ -2880,7 +2607,7 @@ async function renderTagihanPage() {
                 case 'download-csv': _handleDownloadReport('csv'); break;
             }
         });
-
+    
         window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online'); syncOfflineData(); });
         window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
         if (!navigator.onLine) toast('offline', 'Anda sedang offline');
@@ -2901,14 +2628,14 @@ async function renderTagihanPage() {
         if(billId) bill = appState.bills.find(b => b.id === billId);
         
         let targetExpenseId = expenseId || bill?.expenseId;
-
+    
         if(!targetExpenseId && bill?.type !== 'gaji') {
             toast('error', 'Data pengeluaran terkait tidak ditemukan.');
             return;
         }
-
+    
         let content, title;
-
+    
         if (bill && bill.type === 'gaji') {
             content = _createSalaryBillDetailContentHTML(bill);
             title = `Detail Tagihan: ${bill.description}`;
@@ -2922,48 +2649,24 @@ async function renderTagihanPage() {
         
         createModal('dataDetail', { title, content });
     }
-
-    function _createSalaryBillDetailContentHTML(bill) {
-        const remainingAmount = (bill.amount || 0) - (bill.paidAmount || 0);
-        return `
-            <div class="payment-summary">
-                <div><span>Total Tagihan:</span><strong>${fmtIDR(bill.amount)}</strong></div>
-                <div><span>Sudah Dibayar:</span><strong>${fmtIDR(bill.paidAmount || 0)}</strong></div>
-                <div class="remaining"><span>Sisa Tagihan:</span><strong>${fmtIDR(remainingAmount)}</strong></div>
-            </div>
-             <dl class="detail-list">
-                <div>
-                    <dt>Deskripsi</dt>
-                    <dd>${bill.description || '-'}</dd>
-                </div>
-                <div>
-                    <dt>Jenis Tagihan</dt>
-                    <dd>Gaji Pekerja</dd>
-                </div>
-            </dl>
-        `;
-    }
-
+    
     async function _createBillDetailContentHTML(bill, expenseData) {
         const remainingAmount = bill ? (bill.amount || 0) - (bill.paidAmount || 0) : 0;
         
-        let itemsHTML = '';
-        if (expenseData.type === 'material' && expenseData.items) {
-            itemsHTML = `
-                <h5 class="detail-section-title">Rincian Barang</h5>
-                <dl class="detail-list invoice-items-list-detail">
-                ${expenseData.items.map(item => `
-                    <div>
-                        <dt>${item.name} (${item.qty}x)</dt>
-                        <dd>${fmtIDR(item.total)}</dd>
-                    </div>
-                `).join('')}
-                </dl>
+        let itemsButtonHTML = '';
+        if (expenseData.type === 'material' && expenseData.items && expenseData.items.length > 0) {
+            itemsButtonHTML = `
+                <div class="rekap-actions" style="grid-template-columns: 1fr; margin-top: 1rem;">
+                    <button class="btn btn-secondary" data-action="view-invoice-items" data-id="${expenseData.id}">
+                        <span class="material-symbols-outlined">list_alt</span>
+                        Lihat Rincian Faktur
+                    </button>
+                </div>
             `;
         }
     
         const createAttachmentItem = (url, label, field) => {
-            if (!url) return '';
+            if (!url) return ''; // Jangan render jika tidak ada URL
             return `
             <div class="attachment-item">
                 <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
@@ -2976,32 +2679,29 @@ async function renderTagihanPage() {
             </div>`;
         }
         
-        let uploadButtonHTML = '';
-        if (!isViewer()) {
+        let uploadButtonsHTML = '';
+        if (!isViewer() && expenseData.type === 'material') {
+            const buttons = [];
             if (!expenseData.invoiceUrl) {
-                uploadButtonHTML += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`;
+                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`);
             }
             if (!expenseData.deliveryOrderUrl) {
-                uploadButtonHTML += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`;
+                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`);
+            }
+            if (buttons.length > 0) {
+                uploadButtonsHTML = `<div class="rekap-actions" style="grid-template-columns: repeat(${buttons.length}, 1fr); margin-top: 1rem;">${buttons.join('')}</div>`;
             }
         }
-
+    
         const attachmentsHTML = (expenseData.type === 'material') ? `
             <h5 class="detail-section-title">Lampiran</h5>
             <div class="attachment-gallery">
                 ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
                 ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
             </div>
-            ${uploadButtonHTML ? `<div class="rekap-actions" style="grid-template-columns: 1fr 1fr; margin-top: 1rem;">${uploadButtonHTML}</div>` : ''}
+            ${uploadButtonsHTML}
         ` : '';
         
-        const extraActions = (expenseData.type === 'material') ? `
-            <div class="rekap-actions" style="grid-template-columns: 1fr 1fr; margin-top: 1rem;">
-                <button class="btn btn-secondary" data-action="open-invoice-items" data-id="${expenseData.id}">Lihat Rincian Item</button>
-                <button class="btn btn-secondary" data-action="open-attachments" data-id="${expenseData.id}">Lihat Lampiran</button>
-            </div>
-        ` : '';
-
         return `
             <div class="payment-summary">
                 <div><span>Total Pengeluaran:</span><strong>${fmtIDR(expenseData.amount)}</strong></div>
@@ -3010,79 +2710,11 @@ async function renderTagihanPage() {
                 <div class="remaining"><span>Sisa Tagihan:</span><strong>${fmtIDR(remainingAmount)}</strong></div>
                 ` : `<div class="status"><span>Status:</span><strong style="color:var(--success)">Lunas</strong></div>`}
             </div>
-            <dl class="detail-list">
-                <div>
-                    <dt>Uraian</dt>
-                    <dd>${expenseData.description || '-'}</dd>
-                </div>
-            </dl>
-            ${itemsHTML}
+            ${itemsButtonHTML}
             ${attachmentsHTML}
-            ${extraActions}
         `;
-        if (type === 'material') { try { _injectExpenseThumbnails(expenses); } catch (e) {} }
     }
-
-    async function openInvoiceItemsModal(expenseId) {
-        try {
-            const snap = await getDoc(doc(expensesCol, expenseId));
-            if (!snap.exists()) { toast('error', 'Data pengeluaran tidak ditemukan.'); return; }
-            const exp = { id: snap.id, ...snap.data() };
-            const items = exp.items || [];
-            const content = items.length ? `
-                <div class="card card-pad" style="max-height:60vh; overflow:auto;">
-                    <h5 class="detail-section-title" style="margin-top:0;">Rincian Barang</h5>
-                    <dl class="detail-list invoice-items-list-detail">
-                        ${items.map(it => `<div><dt>${it.name} (${it.qty}x)</dt><dd>${fmtIDR(it.total)}</dd></div>`).join('')}
-                        <div class="summary-row final"><dt>Total</dt><dd>${fmtIDR(exp.amount || 0)}</dd></div>
-                    </dl>
-                </div>
-            ` : '<p class="empty-state">Tidak ada item pada faktur ini.</p>';
-            createModal('dataDetail', { title: 'Rincian Barang', content });
-        } catch (e) {
-            console.error(e); toast('error', 'Gagal memuat rincian.');
-        }
-    }
-
-    async function openAttachmentsModal(expenseId) {
-        try {
-            const snap = await getDoc(doc(expensesCol, expenseId));
-            if (!snap.exists()) { toast('error', 'Data pengeluaran tidak ditemukan.'); return; }
-            const exp = { id: snap.id, ...snap.data() };
-            const buildItem = (url, label, field) => {
-                if (!url) return '';
-                return `
-                    <div class="attachment-item">
-                        <img src="${url}" alt="${label}" class="attachment-thumbnail" data-action="view-attachment" data-src="${url}">
-                        <span>${label}</span>
-                        <div class="attachment-actions">
-                            <button class="btn-icon" data-action="download-attachment" data-url="${url}" data-filename="${label.replace(/\s+/g,'_')}.jpg" title="Unduh"><span class="material-symbols-outlined">download</span></button>
-                            ${isViewer() ? '' : `<button class="btn-icon" data-action="upload-attachment" data-id="${exp.id}" data-field="${field}" title="Ganti"><span class="material-symbols-outlined">edit</span></button>`}
-                            ${isViewer() ? '' : `<button class="btn-icon btn-icon-danger" data-action="delete-attachment" data-id="${exp.id}" data-field="${field}" title="Hapus"><span class="material-symbols-outlined">delete</span></button>`}
-                        </div>
-                    </div>`;
-            };
-            let uploadButtons = '';
-            if (!isViewer()) {
-                if (!exp.invoiceUrl) uploadButtons += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${exp.id}" data-field="invoiceUrl">Upload Faktur</button>`;
-                if (!exp.deliveryOrderUrl) uploadButtons += `<button class="btn btn-secondary" data-action="upload-attachment" data-id="${exp.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`;
-            }
-            const content = `
-                <div class="card card-pad" style="max-height:60vh; overflow:auto;">
-                    <h5 class="detail-section-title" style="margin-top:0;">Lampiran</h5>
-                    <div class="attachment-gallery">
-                        ${buildItem(exp.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
-                        ${buildItem(exp.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
-                    </div>
-                    ${uploadButtons ? `<div class="rekap-actions" style="grid-template-columns: 1fr 1fr; margin-top: 1rem;">${uploadButtons}</div>` : ''}
-                </div>
-            `;
-            createModal('dataDetail', { title: 'Lampiran Faktur', content });
-        } catch (e) {
-            console.error(e); toast('error', 'Gagal memuat lampiran.');
-        }
-    }
-
+    
     function _injectExpenseThumbnails(expenses) {
         try {
             const mapById = new Map(expenses.map(e => [e.id, e]));
@@ -3308,16 +2940,7 @@ async function renderTagihanPage() {
                 contentContainer.querySelector('#attendance-project-id')?.addEventListener('change', () => _rerenderAttendanceList());
 
             } else if (tabId === 'rekap') {
-                const toolbar = `
-                    <div class=\"toolbar\">
-                        <div class=\"search\"> 
-                            <span class=\"material-symbols-outlined\">search</span>
-                            <input id=\"rekap-search-input\" type=\"text\" placeholder=\"Cari pekerja...\" value=\"${appState.rekapUI?.search || ''}\"> 
-                        </div>
-                        <button class=\"icon-btn\" title=\"Filter\" data-action=\"open-rekap-filter\"><span class=\"material-symbols-outlined\">filter_alt</span></button>
-                        <button class=\"icon-btn\" title=\"Urutkan\" data-action=\"open-rekap-sort\"><span class=\"material-symbols-outlined\">swap_vert</span></button>
-                    </div>`;
-                contentContainer.innerHTML = toolbar + _getSalaryRecapHTML();
+                contentContainer.innerHTML = _getSalaryRecapHTML();
                 if(!isViewer()) {
                     $('#generate-recap-btn')?.addEventListener('click', () => {
                         const startDate = $('#recap-start-date').value;
@@ -3329,14 +2952,8 @@ async function renderTagihanPage() {
                         }
                     });
                 } else {
-                      generateSalaryRecap(new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date());
+                     generateSalaryRecap(new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date());
                 }
-                $('#rekap-search-input')?.addEventListener('input', (e) => {
-                    appState.rekapUI.search = e.target.value || '';
-                    const startDate = $('#recap-start-date').value;
-                    const endDate = $('#recap-end-date').value;
-                    if (startDate && endDate) generateSalaryRecap(new Date(startDate), new Date(endDate));
-                });
             } else if (tabId === 'manual') {
                 contentContainer.innerHTML = _getManualAttendanceHTML();
                 _initCustomSelects(contentContainer); 
@@ -3665,25 +3282,6 @@ async function renderTagihanPage() {
             workerData.recordIds.push(record.id);
         });
     
-        // Apply search/filter/sort to recap
-        const ui = appState.rekapUI || { search:'', filter:{ profession:'all' }, sort:'total_desc' };
-        const entries = [...salaryRecap.entries()].filter(([workerId, worker]) => {
-            const q = (ui.search||'').toLowerCase();
-            if (q && !worker.workerName.toLowerCase().includes(q)) return false;
-            if (ui.filter?.profession && ui.filter.profession !== 'all') {
-                const profId = appState.workers.find(w => w.id === workerId)?.professionId;
-                if (profId !== ui.filter.profession) return false;
-            }
-            return true;
-        }).sort((a,b)=>{
-            switch(ui.sort){
-                case 'name_az': return a[1].workerName.localeCompare(b[1].workerName);
-                case 'name_za': return b[1].workerName.localeCompare(a[1].workerName);
-                case 'total_asc': return (a[1].totalPay||0)-(b[1].totalPay||0);
-                default: return (b[1].totalPay||0)-(a[1].totalPay||0);
-            }
-        });
-
         let tableHTML = `
             <div class="card card-pad">
                 <div class="recap-table-wrapper">
@@ -3696,7 +3294,7 @@ async function renderTagihanPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            ${entries.map(([workerId, worker]) => `
+                            ${[...salaryRecap.entries()].map(([workerId, worker]) => `
                                 <tr>
                                     <td>${worker.workerName}</td>
                                     <td><strong>${fmtIDR(worker.totalPay)}</strong></td>
@@ -3968,7 +3566,7 @@ async function renderTagihanPage() {
     }
 
     async function handleManageUsers() {
-        
+        toast('syncing', 'Memuat data pengguna...');
         try {
             const pendingQuery = query(membersCol, where("status", "==", "pending"));
             const pendingSnap = await getDocs(pendingQuery);
@@ -4028,7 +3626,7 @@ async function renderTagihanPage() {
                     </div>
                 `
             });
-            
+            toast('success', 'Data pengguna dimuat.');
 
         } catch (e) {
             console.error("Gagal mengambil data pengguna:", e);

@@ -1,13 +1,14 @@
-// Cache names (bumped)
-const STATIC_CACHE = 'banplex-static-v1';
-const IMG_CACHE = 'banplex-img-v1';
-const FONT_CACHE = 'banplex-font-v1';
+﻿// Nama cache (versi dinaikkan untuk memicu pembaruan)
+const STATIC_CACHE = 'banplex-static-v3';
+const DYNAMIC_CACHE = 'banplex-dynamic-v3';
+const IMG_CACHE = 'banplex-img-v3';
+const FONT_CACHE = 'banplex-font-v3';
 
-// Limits (Android-friendly defaults)
-const IMG_CACHE_MAX_ENTRIES = 120; // ~120 thumbnails/attachments
+// Batas entri cache untuk mencegah cache membengkak
+const IMG_CACHE_MAX_ENTRIES = 120;
 const FONT_CACHE_MAX_ENTRIES = 10;
-// [DIUBAH] Menggunakan jalur relatif untuk semua aset lokal
-// Precache only same-origin shell assets (cross-origin handled at runtime)
+
+// Daftar aset inti yang akan disimpan saat instalasi (Precaching)
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -15,131 +16,142 @@ const STATIC_ASSETS = [
   './script.js',
   './manifest.json',
   './logo-main.png',
-  './icons-logo.png'
+  './icons-logo.png',
+  './background-image.png',
+  'https://unpkg.com/dexie@3/dist/dexie.js',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+  'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js'
 ];
 
-// Event 'install': Menyimpan aset inti ke cache
+// Event 'install': Menyimpan semua aset inti ke dalam cache.
 self.addEventListener('install', event => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(STATIC_CACHE);
-    try {
-      await cache.addAll(STATIC_ASSETS);
-      console.log('Static shell cached');
-    } catch (e) {
-      console.warn('Static precache failed', e);
-    }
-  })());
+  console.log('[Service Worker] Menginstall...');
+  event.waitUntil(
+    caches.open(STATIC_CACHE)
+      .then(cache => {
+        console.log('[Service Worker] Precaching App Shell dan aset penting...');
+        return cache.addAll(STATIC_ASSETS);
+      })
+      .catch(error => {
+        console.error('[Service Worker] Gagal melakukan precaching:', error);
+      })
+  );
 });
 
-// [DIUBAH] Event 'activate': Membersihkan cache lama dan mengambil alih kontrol
+// Event 'activate': Membersihkan cache lama dan mengambil alih kontrol.
 self.addEventListener('activate', event => {
-  event.waitUntil((async () => {
-    const valid = new Set([STATIC_CACHE, IMG_CACHE, FONT_CACHE]);
-    const names = await caches.keys();
-    await Promise.all(names.filter(n => !valid.has(n)).map(n => caches.delete(n)));
-    await self.clients.claim();
-  })());
+  console.log('[Service Worker] Mengaktifkan...');
+  event.waitUntil(
+    caches.keys().then(keyList => {
+      return Promise.all(keyList.map(key => {
+        if (key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== IMG_CACHE && key !== FONT_CACHE) {
+          console.log('[Service Worker] Menghapus cache lama:', key);
+          return caches.delete(key);
+        }
+      }));
+    }).then(() => self.clients.claim())
+  );
 });
 
+// Fungsi utilitas untuk memangkas cache agar tidak melebihi batas
 async function trimCache(cacheName, maxEntries) {
   try {
     const cache = await caches.open(cacheName);
     const keys = await cache.keys();
-    if (keys.length <= maxEntries) return;
-    // Delete oldest first (insertion order)
-    await cache.delete(keys[0]);
-    return trimCache(cacheName, maxEntries);
-  } catch (_) {}
+    if (keys.length > maxEntries) {
+      await cache.delete(keys[0]); // Hapus entri tertua
+      return trimCache(cacheName, maxEntries); // Rekursif jika masih berlebih
+    }
+  } catch (e) {
+    console.error(`[Service Worker] Gagal memangkas cache ${cacheName}:`, e);
+  }
 }
 
-// [DIUBAH] Event 'fetch': Menerapkan strategi "Stale-While-Revalidate" untuk pengalaman offline yang cepat
+// Event 'fetch': Menerapkan strategi caching yang sesuai untuk setiap jenis aset.
 self.addEventListener('fetch', event => {
-  const req = event.request;
-  const url = new URL(req.url);
+  const { request } = event;
+  const url = new URL(request.url);
 
-  if (req.method !== 'GET') return;
+  if (request.method !== 'GET') return;
 
-  // Navigasi dokumen: selalu fallback ke index.html saat offline
-  if (req.mode === 'navigate') {
-    event.respondWith((async () => {
-    const cache = await caches.open(STATIC_CACHE);
-    try {
-      const resp = await fetch(req);
-      if (resp && resp.ok) return resp;
-      // Jika gagal dari jaringan, kembalikan cache index.html
-      const cachedIndex = await cache.match('./index.html');
-      return cachedIndex || new Response('<h1>Offline</h1>', { headers: { 'Content-Type': 'text/html' } });
-    } catch (_) {
-        const cachedIndex = await cache.match('./index.html');
-        return cachedIndex || new Response('<h1>Offline</h1>', { headers: { 'Content-Type': 'text/html' } });
-    }
-  })());
-  return;
+  // 1. Aset Inti (App Shell): Cache first. Aset ini sudah ada di cache statis.
+  if (STATIC_ASSETS.includes(url.pathname) || STATIC_ASSETS.includes(url.href)) {
+    event.respondWith(caches.match(request));
+    return;
   }
-
-  // Font Google: layani dari cache jika offline, revalidate bila online
-  const isGoogleFont = url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com');
-  if (isGoogleFont) {
-    event.respondWith((async () => {
-      const cache = await caches.open(FONT_CACHE);
-      const cached = await cache.match(req);
-      try {
-        const resp = await fetch(req);
-        if (resp && resp.ok) {
-          cache.put(req, resp.clone()).catch(() => {});
-          trimCache(FONT_CACHE, FONT_CACHE_MAX_ENTRIES);
-        }
-        return cached || resp;
-      } catch (_) {
-        return cached || Response.error();
-      }
-    })());
+  
+  // 2. Navigasi Dokumen: Network first, fallback to cache.
+  // Selalu coba dapatkan versi terbaru dari index.html, jika gagal (offline), gunakan cache.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .catch(() => caches.match('./index.html'))
+    );
     return;
   }
 
-  // Gambar (termasuk dari Firebase Storage) – cache-first dengan revalidate
-  const isImage = req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i) || url.hostname.includes('firebasestorage.googleapis.com');
-  if (isImage) {
-    event.respondWith((async () => {
-      const cache = await caches.open(IMG_CACHE);
-      const cached = await cache.match(req);
-      try {
-        const resp = await fetch(req, { mode: req.mode });
-        // Simpan response, termasuk opaque (no-cors) untuk <img>
-        if (resp) {
-          cache.put(req, resp.clone()).catch(() => {});
-          trimCache(IMG_CACHE, IMG_CACHE_MAX_ENTRIES);
-        }
-        return cached || resp;
-      } catch (_) {
-        return cached || Response.error();
-      }
-    })());
+  // 3. Font Google: Stale-While-Revalidate.
+  // Ambil dari cache untuk kecepatan, lalu perbarui di latar belakang.
+  if (url.hostname.includes('fonts.gstatic.com') || url.hostname.includes('fonts.googleapis.com')) {
+    event.respondWith(
+      caches.open(FONT_CACHE).then(cache => {
+        return cache.match(request).then(response => {
+          const fetchPromise = fetch(request).then(networkResponse => {
+            if (networkResponse.ok) {
+              cache.put(request, networkResponse.clone());
+              trimCache(FONT_CACHE, FONT_CACHE_MAX_ENTRIES);
+            }
+            return networkResponse;
+          });
+          return response || fetchPromise;
+        });
+      })
+    );
     return;
   }
 
-  // Hanya tangani request GET same-origin (kecuali yang di atas)
-  if (url.origin !== self.location.origin) return;
-  if (req.cache === 'only-if-cached' && req.mode !== 'same-origin') return;
+  // 4. Gambar (termasuk Firebase Storage): Cache first, fallback to network.
+  if (request.destination === 'image' || url.hostname.includes('firebasestorage.googleapis.com')) {
+    event.respondWith(
+      caches.open(IMG_CACHE).then(cache => {
+        return cache.match(request).then(response => {
+          return response || fetch(request).then(networkResponse => {
+            if (networkResponse.ok) {
+              cache.put(request, networkResponse.clone());
+              trimCache(IMG_CACHE, IMG_CACHE_MAX_ENTRIES);
+            }
+            return networkResponse;
+          });
+        });
+      })
+    );
+    return;
+  }
 
-  event.respondWith((async () => {
-    const cache = await caches.open(STATIC_CACHE);
-    const cached = await cache.match(req);
-    try {
-      const resp = await fetch(req);
-      if (resp && resp.ok && (resp.type === 'basic' || resp.type === 'default')) {
-        cache.put(req, resp.clone()).catch(() => {});
-      }
-      return cached || resp;
-    } catch (e) {
-      return cached || new Response('', { status: 504, statusText: 'Gateway Timeout' });
-    }
-  })());
+  // 5. Aset Dinamis Lainnya: Cache first, fallback to network.
+  event.respondWith(
+    caches.open(DYNAMIC_CACHE).then(cache => {
+      return cache.match(request).then(response => {
+        return response || fetch(request).then(networkResponse => {
+          if (networkResponse.ok) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        });
+      });
+    })
+  );
 });
 
-// [BARU] Menerima pesan dari client untuk mengaktifkan service worker baru
+
+// Menerima pesan dari client untuk mengaktifkan service worker baru
 self.addEventListener('message', event => {
   if (event.data && event.data.action === 'skipWaiting') {
     self.skipWaiting();
   }
 });
+
