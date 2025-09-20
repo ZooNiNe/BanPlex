@@ -1,4 +1,4 @@
-﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
+﻿﻿﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
 // @ts-check
 
 // =======================================================
@@ -633,13 +633,6 @@ async function main() {
         renderPageContent();
     }
     
-    function updateHeaderTitle() {
-        const pageTitleEl = $('#header-page-title');
-        if (!pageTitleEl) return;
-        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
-        pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
-    }
-
     function renderBottomNav() {
         const nav = $('#bottom-nav');
         if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
@@ -710,33 +703,52 @@ async function main() {
         }
     }
     
-    function updateHeaderTitle() {
-        const pageTitleEl = $('#header-page-title');
-        if (!pageTitleEl) return;
+// [HAPUS] Fungsi lama fetchAndCacheData
+    // const fetchAndCacheData = async (key, col, order = 'createdAt') => { ... };
 
-        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
-        const pageName = currentPageLink ? currentPageLink.label : 'Halaman';
-        pageTitleEl.textContent = pageName;
-    }
-
-    const fetchData = async (key, col, order = 'createdAt') => {
-        appState[key] = [];
+    // [BARU] Fungsi baru untuk mengambil dan menyimpan data master secara offline
+    const fetchAndCacheData = async (key, col, order = 'createdAt') => {
+        const cacheKey = `master_data:${key}`;
         try {
-            const snap = await getDocs(query(col, orderBy(order, 'desc')));
-            appState[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (e) { console.error(`Failed to fetch ${key}:`, e); toast('error', `Gagal memuat data ${key}.`); }
-    };
+            // 1. Coba ambil dari cache (localStorage) dulu
+            const cachedData = localStorage.getItem(cacheKey);
+            if (cachedData) {
+                appState[key] = JSON.parse(cachedData);
+            }
 
+            // 2. Jika online, selalu coba ambil data terbaru dari Firestore
+            if (appState.isOnline) {
+                const snap = await getDocs(query(col, orderBy(order, 'desc')));
+                const freshData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // 3. Simpan data baru ke state dan cache
+                appState[key] = freshData;
+                localStorage.setItem(cacheKey, JSON.stringify(freshData));
+            } else if (!cachedData) {
+                // 4. Jika offline dan tidak ada di cache, set state ke array kosong
+                appState[key] = [];
+                toast('info', `Data ${key} tidak tersedia saat offline.`);
+            }
+        } catch (e) {
+            console.error(`Gagal memuat atau menyimpan cache ${key}:`, e);
+            // Jika fetch gagal saat online tapi ada data di cache, biarkan data cache yang dipakai
+            if (!appState[key] || appState[key].length === 0) {
+                 appState[key] = [];
+                 toast('error', `Gagal memuat data ${key}.`);
+            }
+        }
+    };
+    
     async function renderDashboardPage() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
     
         // 1. Fetch data
         await Promise.all([
-            fetchData('projects', projectsCol, 'projectName'), 
-            fetchData('incomes', incomesCol), 
-            fetchData('expenses', expensesCol), 
-            fetchData('bills', billsCol)
+            fetchAndCacheData('projects', projectsCol, 'projectName'), 
+            fetchAndCacheData('incomes', incomesCol), 
+            fetchAndCacheData('expenses', expensesCol), 
+            fetchAndCacheData('bills', billsCol)
         ]);
         
         // 2. Lakukan Kalkulasi
@@ -915,13 +927,15 @@ async function main() {
             let formHTML = '';
             let listHTML = '<div id="pemasukan-list-container"></div>';
 
-            if (tabId === 'termin') {
-                await fetchData('projects', projectsCol);
-                formHTML = _getFormPemasukanHTML('termin');
-            } else if (tabId === 'pinjaman') {
-                await fetchData('fundingCreditors', fundingCreditorsCol);
-                formHTML = _getFormPemasukanHTML('pinjaman');
-            }
+    if (tabId === 'termin') {
+        // [UBAH] Gunakan fungsi baru
+        await fetchAndCacheData('projects', projectsCol, 'projectName');
+        formHTML = _getFormPemasukanHTML('termin');
+    } else if (tabId === 'pinjaman') {
+        // [UBAH] Gunakan fungsi baru
+        await fetchAndCacheData('fundingCreditors', fundingCreditorsCol, 'creditorName');
+        formHTML = _getFormPemasukanHTML('pinjaman');
+    }
             
             contentContainer.innerHTML = (isViewer() ? '' : formHTML) + listHTML;
             if (!isViewer()) {
@@ -954,7 +968,7 @@ async function main() {
 
         const col = type === 'termin' ? incomesCol : fundingSourcesCol;
         const key = type === 'termin' ? 'incomes' : 'fundingSources';
-        await fetchData(key, col);
+        await fetchAndCacheData(key, col);
         
         listContainer.innerHTML = _getListPemasukanHTML(type);
     }
@@ -1396,9 +1410,8 @@ async function main() {
             contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
             
             let formHTML;
-            await fetchData('suppliers', suppliersCol, 'supplierName');
-            await fetchData('projects', projectsCol, 'projectName');
-
+            await fetchAndCacheData('suppliers', suppliersCol, 'supplierName');
+            await fetchAndCacheData('projects', projectsCol, 'projectName');
             let categoryOptions = [], categoryMasterType = '', categoryLabel = '', supplierOptions = [];
             const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
 
@@ -1407,14 +1420,14 @@ async function main() {
             } else {
                 let categoryType;
                 if (tabId === 'operasional') {
-                    await fetchData('operationalCategories', opCatsCol);
+                    await fetchAndCacheData('operationalCategories', opCatsCol);
                     categoryOptions = appState.operationalCategories.map(c => ({ value: c.id, text: c.categoryName }));
                     categoryMasterType = 'op-cats';
                     categoryLabel = 'Kategori Operasional';
                     categoryType = 'Operasional';
                 }
                 else if (tabId === 'lainnya') {
-                    await fetchData('otherCategories', otherCatsCol);
+                    await fetchAndCacheData('otherCategories', otherCatsCol);
                     categoryOptions = appState.otherCategories.map(c => ({ value: c.id, text: c.categoryName }));
                     categoryMasterType = 'other-cats';
                     categoryLabel = 'Kategori Lainnya';
@@ -1678,9 +1691,9 @@ async function main() {
         if (!config) return;
     
         await Promise.all([
-            fetchData(config.stateKey, config.collection, config.nameField),
-            fetchData('professions', professionsCol, 'professionName'),
-            fetchData('projects', projectsCol, 'projectName')
+            fetchAndCacheData(config.stateKey, config.collection, config.nameField),
+            fetchAndCacheData('professions', professionsCol, 'professionName'),
+            fetchAndCacheData('projects', projectsCol, 'projectName')
         ]);
     
         const getListItemContent = (item, type) => {
@@ -2615,14 +2628,22 @@ async function main() {
         window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
         if (!navigator.onLine) toast('offline', 'Anda sedang offline');
     }
+       
+    function updateHeaderTitle() {
+        const pageTitleEl = $('#page-label-name');
+        if (!pageTitleEl) return;
+        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
+        pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
+    }
 
     function handleNavigation(pageId) {
         if (!pageId || appState.activePage === pageId) return;
         appState.activePage = pageId;
         localStorage.setItem('lastActivePage', pageId);
+        updateHeaderTitle(); 
         renderUI();
     }
-        
+    
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK TAGIHAN
     // =======================================================
@@ -2930,9 +2951,9 @@ async function main() {
             contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
             
             await Promise.all([
-                fetchData('workers', workersCol, 'workerName'),
-                fetchData('professions', professionsCol, 'professionName'),
-                fetchData('projects', projectsCol, 'projectName')
+                fetchAndCacheData('workers', workersCol, 'workerName'),
+                fetchAndCacheData('professions', professionsCol, 'professionName'),
+                fetchAndCacheData('projects', projectsCol, 'projectName')
             ]);
 
             if(tabId === 'harian') {
@@ -3376,8 +3397,7 @@ async function main() {
             message: `Buat tagihan gaji sebesar ${fmtIDR(amount)} untuk ${workerName}?`,
             onConfirm: async () => {
                 toast('syncing', 'Membuat tagihan gaji...');
-                try {
-                    const q = query(billsCol, where("description", "==", description), where("type", "==", "gaji"));
+                try {                    const q = query(billsCol, where("description", "==", description), where("type", "==", "gaji"));
                     const existingBill = await getDocs(q);
                     if (!existingBill.empty) {
                         toast('error', 'Tagihan untuk periode & pekerja ini sudah ada.');
@@ -3397,7 +3417,11 @@ async function main() {
                     await _logActivity(`Membuat Tagihan Gaji: ${description}`, { billId: billRef.id, amount });
     
                     toast('success', 'Tagihan gaji berhasil dibuat.');
-                    handleNavigation('tagihan');
+                    const startDateValue = $('#recap-start-date').value;
+                    const endDateValue = $('#recap-end-date').value;
+                    if (startDateValue && endDateValue) {
+                        generateSalaryRecap(new Date(startDateValue), new Date(endDateValue));
+                    }
     
                 } catch(error) {
                     toast('error', 'Gagal membuat tagihan gaji.');
@@ -3725,7 +3749,7 @@ async function main() {
         const canvas = $('#financial-summary-chart');
         if (!canvas) return;
 
-        await Promise.all([ fetchData('projects', projectsCol), fetchData('incomes', incomesCol), fetchData('expenses', expensesCol), fetchData('fundingSources', fundingSourcesCol) ]);
+        await Promise.all([ fetchAndCacheData('projects', projectsCol), fetchAndCacheData('incomes', incomesCol), fetchAndCacheData('expenses', expensesCol), fetchAndCacheData('fundingSources', fundingSourcesCol) ]);
 
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
         const pureIncome = appState.incomes.filter(inc => inc.projectId === mainProject?.id).reduce((sum, inc) => sum + inc.amount, 0);
@@ -4120,4 +4144,5 @@ async function main() {
 }
 
 main();
+
 
