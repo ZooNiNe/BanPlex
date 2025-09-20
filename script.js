@@ -307,7 +307,7 @@ async function main() {
             </div>
         `;
     }
-                
+
     function getModalContent(type, data) {
         if (type === 'imageView') {
             return `<div class="image-view-modal" data-close-modal>
@@ -356,24 +356,31 @@ async function main() {
         }
         if (type === 'invoiceItemsDetail') {
             const { items, totalAmount } = data;
+            
+            // [STRUKTUR HTML BARU]
             const itemsHTML = items.map(item => `
-                <div>
-                    <dt>${item.name} (${item.qty} x ${fmtIDR(item.price)})</dt>
-                    <dd>${fmtIDR(item.total)}</dd>
+                <div class="invoice-detail-item">
+                    <div class="item-main-info">
+                        <span class="item-name">${item.name}</span>
+                        <span class="item-total">${fmtIDR(item.total)}</span>
+                    </div>
+                    <div class="item-sub-info">
+                        <span>${item.qty} x ${fmtIDR(item.price)}</span>
+                    </div>
                 </div>
             `).join('');
     
             return modalWithHeader('Rincian Faktur', `
-                <dl class="detail-list">
+                <div class="invoice-detail-list">
                     ${itemsHTML}
-                    <div class="summary-row final">
-                        <dt>Total</dt>
-                        <dd>${fmtIDR(totalAmount)}</dd>
-                    </div>
-                </dl>
+                </div>
+                <div class="invoice-detail-summary">
+                    <span>Total Faktur</span>
+                    <strong>${fmtIDR(totalAmount)}</strong>
+                </div>
             `);
         }
-
+        
         if (type === 'billActionsModal') {
             const { bill, actions } = data;
             const supplierName = appState.suppliers.find(s => s.id === (appState.expenses.find(e => e.id === bill.expenseId)?.supplierId))?.supplierName || '';

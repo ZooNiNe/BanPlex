@@ -1300,3 +1300,63 @@ text-align: right;
   color: #b91c1c; /* Warna teks merah tua */
   background-color: #fee2e2; /* Warna latar merah muda */
 }
+
+.modal-body {
+  padding: 0;
+  overflow-y: auto;
+}
+
+/* Wadah utama daftar item */
+.invoice-detail-list {
+  padding: 0.5rem 1.25rem;
+}
+
+/* Setiap baris item faktur */
+.invoice-detail-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.invoice-detail-item:last-child {
+  border-bottom: none;
+}
+
+/* Baris utama: Nama item (kiri) dan Total item (kanan) */
+.item-main-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.2rem;
+}
+.item-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  word-break: break-word; /* Agar teks panjang pindah baris */
+}
+.item-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap; /* Mencegah angka terpotong */
+}
+
+/* Baris kedua: Detail perkalian (Qty x Harga) */
+.item-sub-info {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* Bagian total di bawah */
+.invoice-detail-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  margin-top: 0.5rem;
+  background-color: var(--surface-muted); /* Latar belakang berbeda */
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+.invoice-detail-summary strong {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--primary);
+}
