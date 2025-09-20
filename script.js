@@ -307,7 +307,7 @@ async function main() {
             </div>
         `;
     }
-            
+                
     function getModalContent(type, data) {
         if (type === 'imageView') {
             return `<div class="image-view-modal" data-close-modal>
