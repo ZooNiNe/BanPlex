@@ -63,40 +63,50 @@
     <!-- Mencegah Firebase mencari file init.json -->
     <script>window.firebaseConfig = {}</script>
     
-    <script type="module" src="script.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    registration.onupdatefound = () => {
-                        const installingWorker = registration.installing;
-                        installingWorker.onstatechange = () => {
-                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                const updateNotif = document.getElementById('update-notification');
-                                if (updateNotif) updateNotif.classList.add('show');
-                                
-                                const reloadBtn = document.getElementById('reload-app-btn');
-                                if (reloadBtn) {
-                                    reloadBtn.onclick = () => {
-                                        installingWorker.postMessage({ action: 'skipWaiting' });
-                                    };
+    <body>
+        <script type="module" src="script.js"></script>
+        <script>
+            // Pastikan Service Worker didukung oleh browser
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    // 1. Daftarkan service worker
+                    navigator.serviceWorker.register('./service-worker.js').then(registration => {
+                        console.log('ServiceWorker registration successful');
+    
+                        // 2. Pantau jika ada pembaruan yang ditemukan
+                        registration.onupdatefound = () => {
+                            const installingWorker = registration.installing;
+                            installingWorker.onstatechange = () => {
+                                // 3. Cek apakah worker baru sudah terinstal dan sedang menunggu
+                                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // Kondisi ini terpenuhi: ada worker baru yang siap.
+                                    // Tampilkan notifikasi pembaruan!
+                                    const updateNotif = document.getElementById('update-notification');
+                                    if (updateNotif) updateNotif.classList.add('show');
+                                    
+                                    const reloadBtn = document.getElementById('reload-app-btn');
+                                    if (reloadBtn) {
+                                        // 4. Saat tombol diklik, kirim pesan ke worker baru
+                                        reloadBtn.onclick = () => {
+                                            installingWorker.postMessage({ action: 'skipWaiting' });
+                                        };
+                                    }
                                 }
-                            }
+                            };
                         };
-                    };
-                }).catch(error => {
-                    console.log('ServiceWorker registration failed: ', error);
+                    }).catch(error => {
+                        console.log('ServiceWorker registration failed: ', error);
+                    });
+    
+                    // 5. Setelah worker baru mengambil alih, muat ulang halaman
+                    let refreshing;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (refreshing) return;
+                        window.location.reload();
+                        refreshing = true;
+                    });
                 });
-
-                let refreshing;
-                navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    if (refreshing) return;
-                    window.location.reload();
-                    refreshing = true;
-                });
-            });
-        }
-    </script>
-</body>
-</html>
+            }
+        </script>
+    </body>
+    </html>

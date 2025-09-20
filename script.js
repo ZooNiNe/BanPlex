@@ -615,24 +615,32 @@ async function main() {
     
     function renderUI() {
         const header = document.querySelector('.main-header');
+        const bottomNav = $('#bottom-nav');
+
         if (!appState.currentUser) {
+            // [PERBAIKAN] Sembunyikan header dan bottom nav untuk guest
             if (header) header.style.display = 'none';
-            $('#bottom-nav').innerHTML = '';
+            if (bottomNav) bottomNav.style.display = 'none';
+            
             renderGuestLanding();
             return;
-        } else {
-            if (header) header.style.display = '';
-        }
+        } 
+        
+        // [PERBAIKAN] Pastikan header dan bottom nav tampil untuk user yang login
+        if (header) header.style.display = ''; // Kembalikan ke style default (flex)
+        if (bottomNav) bottomNav.style.display = 'flex';
+
         updateHeaderTitle();
         renderBottomNav();
         updateNavActiveState();
+
         if (appState.userStatus !== 'active') {
             renderPendingLanding();
             return;
         }
         renderPageContent();
     }
-    
+        
     function renderBottomNav() {
         const nav = $('#bottom-nav');
         if (!nav || appState.userStatus !== 'active') { if(nav) nav.innerHTML = ''; return; }
@@ -743,7 +751,7 @@ async function main() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
     
-        // 1. Fetch data
+        // 1. Fetch data (kode ini tidak berubah)
         await Promise.all([
             fetchAndCacheData('projects', projectsCol, 'projectName'), 
             fetchAndCacheData('incomes', incomesCol), 
@@ -751,7 +759,7 @@ async function main() {
             fetchAndCacheData('bills', billsCol)
         ]);
         
-        // 2. Lakukan Kalkulasi
+        // 2. Lakukan Kalkulasi (kode ini tidak berubah)
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
         const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
@@ -765,8 +773,10 @@ async function main() {
         const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
     
         const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
-            const actual = appState.expenses.filter(e => e.projectId === p.id).reduce((sum, e) => sum + e.amount, 0);
-            const remaining = p.budget - actual;
+            const actual = appState.expenses
+                .filter(e => e.projectId === p.id && !internalProjects.some(ip => ip.id === e.projectId))
+                .reduce((sum, e) => sum + e.amount, 0);
+            const remaining = p.budget - actual;            
             const percentage = p.budget > 0 ? (actual / p.budget) * 100 : 0;
             return { ...p, actual, remaining, percentage };
         });
@@ -781,6 +791,7 @@ async function main() {
             return recap;
         }, {});
     
+        // 3. Render HTML (kode ini tidak berubah)
         const balanceCardsHTML = `
             <div class="dashboard-balance-grid">
                 <div class="dashboard-balance-card clickable" data-action="navigate" data-nav="laporan">
@@ -825,13 +836,10 @@ async function main() {
              </div>`;
     
         const accessibleLinks = ALL_NAV_LINKS.filter(link => link.id !== 'dashboard' && link.roles.includes(appState.userRole));
-        
-        // Definisikan aksi utama dan tambahan
         const mainActionIds = ['tagihan', 'laporan', 'stok'];
         const mainActions = [];
         const extraActions = [];
     
-        // Pisahkan link berdasarkan urutan yang ditentukan
         accessibleLinks.forEach(link => {
             if (mainActionIds.includes(link.id)) {
                 mainActions.push(link);
@@ -840,7 +848,6 @@ async function main() {
             }
         });
     
-        // Urutkan aksi utama sesuai urutan
         mainActions.sort((a, b) => mainActionIds.indexOf(a.id) - mainActionIds.indexOf(b.id));
     
         const createActionItemHTML = (link, isExtra = false) => `
@@ -865,7 +872,7 @@ async function main() {
                     ${extraActions.map(link => createActionItemHTML(link, true)).join('')}
                 </div>
             </div>`;
-    
+
         container.innerHTML = balanceCardsHTML + quickActionsHTML + projectBudgetHTML + dailyRecapHTML;
     }
         async function renderPengaturanPage() {
@@ -1275,6 +1282,8 @@ async function main() {
             <div id="sub-page-content"><div class="loader-container"><div class="spinner"></div></div></div>
         `;
     
+        await fetchAndCacheData('projects', projectsCol, 'projectName');
+
         const renderTabContent = async (tabId) => {
             const contentContainer = $('#sub-page-content');
             contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
@@ -1326,6 +1335,18 @@ async function main() {
         return `
         <div style="margin-top: 1.5rem;">
             ${bills.map(item => {
+                let badgeHTML = '';
+                // 1. Cari proyek yang sesuai dengan projectId pada data tagihan
+                const project = appState.projects.find(p => p.id === item.projectId);
+
+                // 2. Jika proyek ditemukan, tentukan badge berdasarkan projectType
+                if (project && project.projectType) {
+                    if (project.projectType === 'main_income') {
+                        badgeHTML = `<span class="project-type-badge project-type-main">Utama</span>`;
+                    } else if (project.projectType === 'internal_expense') {
+                        badgeHTML = `<span class="project-type-badge project-type-internal">Internal</span>`;
+                    }
+                } 
                 const date = item.dueDate?.toDate ? item.dueDate.toDate().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : 'Tanggal tidak valid';
                 const remainingAmount = (item.amount || 0) - (item.paidAmount || 0);
                 const isPaid = remainingAmount <= 0;
@@ -3388,16 +3409,28 @@ async function main() {
         const description = `Gaji ${workerName} periode ${startDate} - ${endDate}`;
         const amount = Number(totalPay);
     
-        if(amount <= 0) {
-            toast('error', 'Total gaji nol, tagihan tidak dapat dibuat.');
-            return;
-        }
-    
         createModal('confirmGenerateBill', {
             message: `Buat tagihan gaji sebesar ${fmtIDR(amount)} untuk ${workerName}?`,
             onConfirm: async () => {
                 toast('syncing', 'Membuat tagihan gaji...');
-                try {                    const q = query(billsCol, where("description", "==", description), where("type", "==", "gaji"));
+                try {
+                    // [LOGIKA BARU] Ambil projectId dari salah satu record absensi
+                    const recordIdArray = recordIds.split(',');
+                    if (recordIdArray.length === 0) {
+                        toast('error', 'Tidak ada data absensi untuk diproses.');
+                        return;
+                    }
+                    const firstRecordRef = doc(attendanceRecordsCol, recordIdArray[0]);
+                    const firstRecordSnap = await getDoc(firstRecordRef);
+                    const projectId = firstRecordSnap.exists() ? firstRecordSnap.data().projectId : null;
+                    
+                    if (!projectId) {
+                        toast('error', 'Proyek untuk tagihan gaji ini tidak ditemukan.');
+                        return;
+                    }
+                    // [AKHIR LOGIKA BARU]
+
+                    const q = query(billsCol, where("description", "==", description), where("type", "==", "gaji"));
                     const existingBill = await getDocs(q);
                     if (!existingBill.empty) {
                         toast('error', 'Tagihan untuk periode & pekerja ini sudah ada.');
@@ -3406,13 +3439,15 @@ async function main() {
     
                     const billRef = await addDoc(billsCol, {
                         description, amount, paidAmount: 0, dueDate: Timestamp.now(), status: 'unpaid',
-                        type: 'gaji', workerId, recordIds: recordIds.split(','), createdAt: serverTimestamp()
+                        type: 'gaji', workerId, recordIds: recordIds.split(','), createdAt: serverTimestamp(),
+                        projectId: projectId // [TAMBAHAN] Simpan projectId ke dalam tagihan
                     });
                     
                     const batch = writeBatch(db);
                     recordIds.split(',').forEach(id => {
                         batch.update(doc(attendanceRecordsCol, id), { isPaid: true, billId: billRef.id });
                     });
+                    
                     await batch.commit();
                     await _logActivity(`Membuat Tagihan Gaji: ${description}`, { billId: billRef.id, amount });
     
@@ -3773,15 +3808,33 @@ async function main() {
 
     async function _renderLaporanLabaRugi(container) {
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
-        const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
+        // [LOGIKA DIPERBARUI] Proyek internal adalah semua proyek yang BUKAN proyek utama.
+        const internalProjects = appState.projects.filter(p => p.id !== mainProject?.id);
         
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
         const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
-        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
+        
+        // [PERBAIKAN] Ambil data 'bills' terbaru langsung dari Firestore sebelum kalkulasi
+        const billsSnap = await getDocs(query(billsCol));
+        const allBills = billsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const paidSalaryBills = allBills.filter(b => b.type === 'gaji' && b.status === 'paid');
+        
+        const hpp_gaji = paidSalaryBills
+            .filter(b => b.projectId === mainProject?.id) // Gaji yang masuk HPP hanya dari proyek utama
+            .reduce((sum, b) => sum + b.amount, 0);
+            
+        const bebanGajiInternal = paidSalaryBills
+            .filter(b => internalProjects.some(p => p.id === b.projectId)) // Gaji yang masuk beban internal
+            .reduce((sum, b) => sum + b.amount, 0);
+
         const hpp = hpp_material + hpp_gaji;
         const labaKotor = pendapatan - hpp;
         const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
-        const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        
+        // Gabungkan beban internal dari 'expenses' dan dari gaji 'bills'
+        const bebanExpenseInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        const bebanInternal = bebanExpenseInternal + bebanGajiInternal;
+
         const labaBersih = labaKotor - bebanOperasional - bebanInternal;
 
         container.innerHTML = `

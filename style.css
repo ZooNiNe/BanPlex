@@ -1,5 +1,5 @@
 /* =======================================================
- * BanPlex Styles - v3.0 Progressive App
+ * BanPlex Styles - v5.0 Progressive App
  * ======================================================= */
  :root {
   --bg-start: #f0f4f8;
@@ -130,7 +130,7 @@ select { min-height: 40px; }
 }
 
 /* =======================================================
- * [PERUBAHAN BESAR] Desain Dashboard v3 - Modern & Ramping
+ * [PERUBAHAN BESAR] Desain Dashboard v5 - Modern & Ramping
  * ======================================================= */
 .dashboard-balance-grid {
   display: grid;
@@ -821,13 +821,55 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 
 /* Reduce native browser effects */
 html, body { overscroll-behavior-y: none; }
-/* Update notification modal (centered) */
-.update-notification { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 3000; }
-.update-notification.show { display: flex; }
-.update-notification > *:not(.update-card) { display: none; }
-.update-notification .update-card { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg); padding: 1rem 1.25rem; border-radius: var(--radius-lg); text-align: center; max-width: 320px; width: calc(100% - 3rem); }
-.update-notification .update-card h4 { margin: 0 0 .5rem 0; }
-.update-notification .update-card p { margin: 0 0 .75rem 0; color: var(--text-dim); }
+/* Update Notifikasi */
+#update-notification {
+  position: fixed; /* Membuatnya tetap di tempat bahkan saat scroll */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7); /* Latar belakang semi-transparan hitam */
+  display: flex; /* Menggunakan flexbox untuk memposisikan konten di tengah */
+  justify-content: center; /* Horizontally center */
+  align-items: center; /* Vertically center */
+  z-index: 1000; /* Pastikan di atas semua elemen lain */
+  opacity: 0; /* Awalnya sembunyikan */
+  visibility: hidden; /* Sembunyikan sepenuhnya dari interaksi */
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out; /* Transisi saat muncul */
+}
+
+#update-notification.show {
+  opacity: 1; /* Tampilkan saat class 'show' ditambahkan */
+  visibility: visible;
+}
+
+.update-card {
+  background-color: var(--card-bg); /* Menggunakan warna background kartu aplikasi */
+  color: var(--text-color); /* Warna teks agar terbaca */
+  padding: 20px;
+  border-radius: var(--border-radius-lg); /* Sudut membulat */
+  text-align: center;
+  box-shadow: var(--shadow); /* Tambahkan shadow agar terlihat menonjol */
+  max-width: 80%; /* Batasi lebar agar tidak terlalu lebar di layar besar */
+  margin: 20px; /* Margin agar tidak menempel di tepi layar */
+}
+
+.update-card h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1.2rem;
+}
+
+.update-card p {
+  margin-bottom: 20px;
+  font-size: 0.95rem;
+}
+
+.update-card .btn {
+  width: 100%; /* Tombol memenuhi lebar kartu */
+  max-width: 200px; /* Batasi lebar tombol */
+  margin-top: 10px;
+}
 
 /* =======================================================
  * [BARU] Global Toolbar & Filter Modal
@@ -1014,4 +1056,26 @@ html, body { overscroll-behavior-y: none; }
     .modal-bg.show .modal-content { transform: scale(1); }
   }
   
-  
+  /* Style untuk Badge Jenis Proyek di Kartu Tagihan */
+.project-type-badge {
+  font-size: 0.7rem;          /* Ukuran font kecil */
+  font-weight: 600;           /* Sedikit tebal */
+  padding: 2px 8px;           /* Padding vertikal kecil, horizontal lebih besar */
+  border-radius: 12px;        /* Bentuk kapsul */
+  margin-left: 8px;           /* Jarak dari judul */
+  vertical-align: middle;     /* Agar sejajar dengan teks judul */
+  display: inline-block;      /* Pastikan padding dan margin berfungsi */
+  line-height: 1.5;           /* Ketinggian baris agar teks tidak mepet */
+}
+
+/* Warna untuk Proyek Utama */
+.project-type-main {
+  background-color: var(--info-bg); /* Warna latar biru muda */
+  color: var(--info);               /* Warna teks biru */
+}
+
+/* Warna untuk Proyek Internal */
+.project-type-internal {
+  background-color: var(--warn-bg); /* Warna latar kuning muda */
+  color: var(--warn);               /* Warna teks kuning */
+}
