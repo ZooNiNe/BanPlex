@@ -81,19 +81,36 @@
                                     const reloadBtn = document.getElementById('reload-app-btn');
         
                                     if (updateNotif && reloadBtn) {
-                                        // Tampilkan notifikasi
+                                        // Tampilkan notifikasi "Pembaruan Tersedia"
                                         updateNotif.classList.add('show');
         
-                                        // [FUNGSI BARU] Menutup pop-up saat area luar disentuh
+                                        // Menutup pop-up saat area luar disentuh
                                         updateNotif.addEventListener('click', (e) => {
-                                            // Hanya tutup jika yang diklik adalah latar belakangnya, bukan kartu di dalamnya
                                             if (e.target === updateNotif) {
                                                 updateNotif.classList.remove('show');
                                             }
                                         });
         
-                                        // [PERBAIKAN] Memastikan tombol "Perbarui" berfungsi untuk update
+                                        // [PERBAIKAN UTAMA DI SINI]
                                         reloadBtn.addEventListener('click', () => {
+                                            // 1. Sembunyikan notifikasi "Pembaruan Tersedia"
+                                            updateNotif.classList.remove('show');
+        
+                                            // 2. Tampilkan pop-up aksi "Memperbarui..."
+                                            const loader = document.getElementById('global-loader');
+                                            if (loader) {
+                                                // Tambahkan teks ke loader agar lebih informatif
+                                                const loaderContent = loader.querySelector('.loader-content');
+                                                if (!loaderContent.querySelector('p')) {
+                                                    const message = document.createElement('p');
+                                                    message.textContent = 'Memperbarui aplikasi...';
+                                                    message.style.color = '#64748b';
+                                                    loaderContent.appendChild(message);
+                                                }
+                                                loader.style.display = 'flex';
+                                            }
+        
+                                            // 3. Kirim pesan ke service worker untuk memulai update
                                             installingWorker.postMessage({ action: 'skipWaiting' });
                                         }, { once: true });
                                     }
@@ -104,6 +121,7 @@
                         console.log('ServiceWorker registration failed: ', error);
                     });
         
+                    // Listener ini akan memuat ulang halaman setelah worker baru aktif
                     let refreshing;
                     navigator.serviceWorker.addEventListener('controllerchange', () => {
                         if (refreshing) return;

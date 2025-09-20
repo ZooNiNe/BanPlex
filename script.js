@@ -2444,7 +2444,7 @@ async function main() {
         const ptrEl = document.getElementById('ptr');
         const pageContainer = document.querySelector('.page-container');
         // [DIUBAH] Meningkatkan ambang batas agar tidak terlalu sensitif
-        const PTR_THRESHOLD = 120, PTR_MAX = 180;
+        const PTR_THRESHOLD = 180, PTR_MAX = 250;
         let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
     
         function handleSwipeGesture() {
@@ -2513,14 +2513,23 @@ async function main() {
         }
     
         document.body.addEventListener('touchstart', e => {
-            touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY;
+            touchstartX = e.changedTouches[0].screenX;
+            touchstartY = e.changedTouches[0].screenY;
+        
+            // [LOGIKA BARU DIMULAI]
+            const touchY = e.changedTouches[0].clientY; // Posisi sentuhan dari atas layar
+            const touchAreaHeight = 50; // Jarak dari atas layar dalam pixel (bisa diubah)
+            const inTouchArea = touchY < touchAreaHeight;
+            // [LOGIKA BARU BERAKHIR]
+        
             const scroller = pageContainer || document.scrollingElement;
             const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
-            // [DIUBAH] Hanya aktifkan pull-to-refresh di halaman dashboard
-            ptrArmed = atTop && appState.activePage === 'dashboard';
-            ptrActive = false; ptrPull = 0;
+        
+            ptrArmed = atTop && inTouchArea && appState.activePage === 'dashboard';
+            ptrActive = false;
+            ptrPull = 0;
         }, { passive: true });
-    
+
         document.body.addEventListener('touchmove', e => {
             const y = e.changedTouches[0].screenY; const x = e.changedTouches[0].screenX;
             const dy = y - touchstartY; const dx = x - touchstartX;
