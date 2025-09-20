@@ -2407,7 +2407,8 @@ async function main() {
         // Pull-to-refresh state
         const ptrEl = document.getElementById('ptr');
         const pageContainer = document.querySelector('.page-container');
-        const PTR_THRESHOLD = 70, PTR_MAX = 140;
+        // [DIUBAH] Meningkatkan ambang batas agar tidak terlalu sensitif
+        const PTR_THRESHOLD = 120, PTR_MAX = 180;
         let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
     
         function handleSwipeGesture() {
@@ -2479,7 +2480,9 @@ async function main() {
             touchstartX = e.changedTouches[0].screenX; touchstartY = e.changedTouches[0].screenY;
             const scroller = pageContainer || document.scrollingElement;
             const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
-            ptrArmed = atTop; ptrActive = false; ptrPull = 0;
+            // [DIUBAH] Hanya aktifkan pull-to-refresh di halaman dashboard
+            ptrArmed = atTop && appState.activePage === 'dashboard';
+            ptrActive = false; ptrPull = 0;
         }, { passive: true });
     
         document.body.addEventListener('touchmove', e => {
@@ -4117,3 +4120,4 @@ async function main() {
 }
 
 main();
+
