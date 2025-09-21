@@ -58,6 +58,11 @@ async function main() {
         materialCategories: [], otherCategories: [], suppliers: [], workers: [],
         professions: [], incomes: [], fundingSources: [], expenses: [], bills: [],
         attendance: new Map(), users: [],
+        selectionMode: {
+            active: false,
+            selectedIds: new Set(),
+            pageContext: '' // Untuk melacak di halaman mana seleksi aktif
+        },
         billsFilter: {
             searchTerm: '',
             projectId: 'all',
@@ -65,6 +70,7 @@ async function main() {
             sortBy: 'dueDate',
             sortDirection: 'desc'
         },
+
     };
     if (sessionStorage.getItem('appJustUpdated') === 'true') {
         toast('success', 'Aplikasi berhasil diperbarui!');
@@ -722,6 +728,22 @@ async function main() {
         }
         renderPageContent();
     }
+
+    function updateHeaderTitle() {
+        const pageTitleEl = $('#page-label-name');
+        if (!pageTitleEl) return;
+        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
+        pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
+    }
+    
+    function handleNavigation(pageId) {
+        if (!pageId || appState.activePage === pageId) return;
+        appState.activePage = pageId;
+        localStorage.setItem('lastActivePage', pageId);
+        updateHeaderTitle(); 
+        renderUI();
+    }
+    
 
     function renderBottomNav() {
         const nav = $('#bottom-nav');
@@ -1393,7 +1415,15 @@ async function main() {
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
             </div>
             <div id="sub-page-content"><div class="loader-container"><div class="spinner"></div></div></div>
-        `;
+            </div>
+            <div class="sub-nav">
+                ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+            </div>
+
+            <div id="tagihan-summary-card" class="card card-pad summary-card" style="display: none;"></div>
+
+            <div id="sub-page-content"><div class="loader-container"><div class="spinner"></div></div></div>
+        `;        
     
         await Promise.all([
             fetchAndCacheData('projects', projectsCol, 'projectName'),
@@ -1436,7 +1466,40 @@ async function main() {
     
                 return appState.billsFilter.sortDirection === 'asc' ? valA - valB : valB - valA;
             });
-    
+            // 5. Kalkulasi dan tampilkan ringkasan
+            const summaryCard = $('#tagihan-summary-card');
+            if (summaryCard) {
+                // Tampilkan ringkasan hanya jika filter supplier atau proyek aktif (bukan 'all')
+                const isFiltered = appState.billsFilter.projectId !== 'all' || appState.billsFilter.supplierId !== 'all';
+
+                if (isFiltered && filtered.length > 0) {
+                    const totalAmount = filtered.reduce((sum, bill) => sum + bill.amount, 0);
+                    const totalPaid = filtered.reduce((sum, bill) => sum + (bill.paidAmount || 0), 0);
+                    const remainingAmount = totalAmount - totalPaid;
+
+                    // Dapatkan nama filter untuk ditampilkan di judul
+                    let filterName = '';
+                    if (appState.billsFilter.projectId !== 'all') {
+                        filterName = appState.projects.find(p => p.id === appState.billsFilter.projectId)?.projectName || '';
+                    } else if (appState.billsFilter.supplierId !== 'all') {
+                        filterName = appState.suppliers.find(s => s.id === appState.billsFilter.supplierId)?.supplierName || '';
+                    }
+
+                    summaryCard.innerHTML = `
+                        <h5 class="summary-title">Ringkasan untuk: ${filterName}</h5>
+                        <div class="summary-grid">
+                            <div><span class="label">Total Tagihan</span><strong>${fmtIDR(totalAmount)}</strong></div>
+                            <div><span class="label">Sudah Dibayar</span><strong class="positive">${fmtIDR(totalPaid)}</strong></div>
+                            <div><span class="label">Sisa Tagihan</span><strong class="negative">${fmtIDR(remainingAmount)}</strong></div>
+                        </div>
+                    `;
+                    summaryCard.style.display = 'block';
+                } else {
+                    // Sembunyikan jika tidak ada filter atau tidak ada hasil
+                    summaryCard.style.display = 'none';
+                }
+            }
+
             $('#sub-page-content').innerHTML = _getBillsListHTML(filtered, $('.sub-nav-item.active').dataset.tab);
         };
     
@@ -2707,6 +2770,83 @@ async function handleManageMasterData(type) {
         }
     }
 
+    // Letakkan fungsi-fungsi ini di dalam main()
+        let longPressTimer;
+        let isLongPress = false;
+
+        function enterSelectionMode(targetCard, pageContext) {
+            if (appState.selectionMode.active) return;
+
+            appState.selectionMode.active = true;
+            appState.selectionMode.pageContext = pageContext;
+            document.body.classList.add('selection-active');
+            $('#selection-bar')?.classList.add('show');
+
+            const cardId = targetCard.dataset.id;
+            toggleSelection(cardId);
+        }
+
+        function exitSelectionMode() {
+            appState.selectionMode.active = false;
+            appState.selectionMode.selectedIds.clear();
+            appState.selectionMode.pageContext = '';
+
+            document.body.classList.remove('selection-active');
+            $('#selection-bar')?.classList.remove('show');
+
+            $$('.card-list-item.selected').forEach(card => card.classList.remove('selected'));
+        }
+
+        function toggleSelection(cardId) {
+            if (!appState.selectionMode.active) return;
+
+            const card = $(`.card-list-item[data-id="${cardId}"]`);
+            if (!card) return;
+
+            if (appState.selectionMode.selectedIds.has(cardId)) {
+                appState.selectionMode.selectedIds.delete(cardId);
+                card.classList.remove('selected');
+            } else {
+                appState.selectionMode.selectedIds.add(cardId);
+                card.classList.add('selected');
+            }
+
+            if (appState.selectionMode.selectedIds.size === 0) {
+                exitSelectionMode();
+            } else {
+                updateSelectionTotals();
+            }
+        }
+
+        function updateSelectionTotals() {
+            const countEl = $('#selection-count');
+            const totalEl = $('#selection-total');
+            if (!countEl || !totalEl) return;
+
+            const selectedIds = Array.from(appState.selectionMode.selectedIds);
+            let totalAmount = 0;
+
+            // Tentukan sumber data berdasarkan halaman saat seleksi dimulai
+            let dataSource = [];
+            if (appState.selectionMode.pageContext === 'tagihan') {
+                dataSource = appState.bills;
+            } else if (appState.selectionMode.pageContext === 'pemasukan_termin') {
+                dataSource = appState.incomes;
+            } else if (appState.selectionMode.pageContext === 'pemasukan_pinjaman') {
+                dataSource = appState.fundingSources;
+            }
+
+            selectedIds.forEach(id => {
+                const item = dataSource.find(i => i.id === id);
+                if (item) {
+                    totalAmount += item.amount || item.totalAmount || 0;
+                }
+            });
+
+            countEl.textContent = `${selectedIds.length} item dipilih`;
+            totalEl.textContent = fmtIDR(totalAmount);
+        }
+    
     function _compressImage(file, quality = 0.7, maxWidth = 1024) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -2742,365 +2882,348 @@ async function handleManageMasterData(type) {
     // =======================================================
     //         INISIALISASI & EVENT LISTENER UTAMA
     // =======================================================
-    function init() {
-        let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
-        // Pull-to-refresh state
-        const ptrEl = document.getElementById('ptr');
-        const pageContainer = document.querySelector('.page-container');
-        // [DIUBAH] Meningkatkan ambang batas agar tidak terlalu sensitif
-        const PTR_THRESHOLD = 180, PTR_MAX = 250;
-        let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
-    
-        function handleSwipeGesture() {
-            const deltaX = touchendX - touchstartX;
-            const deltaY = touchendY - touchstartY;
-    
-            if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 200) return;
-    
-            const container = $('.page-container');
-            const activeSubNav = container.querySelector('.sub-nav');
-    
-            if (activeSubNav) {
-                const tabs = $$('.sub-nav-item', activeSubNav);
-                const activeTabIndex = tabs.findIndex(tab => tab.classList.contains('active'));
-                if (activeTabIndex === -1) return;
-    
-                let nextTabIndex = (touchendX < touchstartX) ? activeTabIndex + 1 : activeTabIndex - 1;
-                if (nextTabIndex >= 0 && nextTabIndex < tabs.length) tabs[nextTabIndex].click();
-    
-            } else {
-                let navIdsToShow = [];
-                if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
-                else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
-                else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
-                
-                const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
-                const currentAccessibleIndex = accessibleLinks.findIndex(link => link.id === appState.activePage);
-                if (currentAccessibleIndex === -1) return;
-    
-                let nextNavIndex = (touchendX < touchstartX) ? currentAccessibleIndex + 1 : currentAccessibleIndex - 1;
-                if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) handleNavigation(accessibleLinks[nextNavIndex].id);
-            }
-        }
-    
-        function resetPTR(animated = true) {
-            ptrPull = 0; ptrActive = false; ptrArmed = false;
-            if (ptrEl) {
-                if (!animated) ptrEl.style.transition = 'none';
-                ptrEl.style.transform = `translateY(0)`;
-                // force reflow
-                void ptrEl.offsetHeight;
-                ptrEl.style.transition = '';
-                ptrEl.classList.remove('ptr-ready');
-            }
-            if (pageContainer) {
-                if (!animated) pageContainer.style.transition = 'none';
-                pageContainer.style.transform = '';
-                void pageContainer.offsetHeight;
-                pageContainer.style.transition = '';
-            }
-        }
-    
-        async function performPTRRefresh() {
-            try {
-                toast('syncing', 'Memuat...');
-                await Promise.resolve(syncOfflineData?.());
-                // Refresh targeted pages with fresh content
-                if (appState.activePage === 'dashboard') await renderDashboardPage();
-                else if (appState.activePage === 'tagihan') await renderTagihanPage();
-                else if (appState.activePage === 'laporan') await renderLaporanPage();
-                else renderPageContent();
-            } finally {
-                hideToast();
-                resetPTR();
-            }
-        }
-    
-        document.body.addEventListener('touchstart', e => {
-            touchstartX = e.changedTouches[0].screenX;
-            touchstartY = e.changedTouches[0].screenY;
-        
-            // [LOGIKA BARU DIMULAI]
-            const touchY = e.changedTouches[0].clientY; // Posisi sentuhan dari atas layar
-            const touchAreaHeight = 50; // Jarak dari atas layar dalam pixel (bisa diubah)
-            const inTouchArea = touchY < touchAreaHeight;
-            // [LOGIKA BARU BERAKHIR]
-        
-            const scroller = pageContainer || document.scrollingElement;
-            const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
-        
-            ptrArmed = atTop && inTouchArea && appState.activePage === 'dashboard';
-            ptrActive = false;
-            ptrPull = 0;
-        }, { passive: true });
+// GANTI SELURUH FUNGSI init() ANDA DENGAN KODE DI BAWAH INI
+function init() {
+    // === Bagian 1: Deklarasi Variabel & Fungsi Helper Internal ===
+    let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
+    const ptrEl = document.getElementById('ptr');
+    const pageContainer = document.querySelector('.page-container');
+    const PTR_THRESHOLD = 180, PTR_MAX = 250;
+    let ptrActive = false; let ptrPull = 0; let ptrArmed = false;
 
-        document.body.addEventListener('touchmove', e => {
-            const y = e.changedTouches[0].screenY; const x = e.changedTouches[0].screenX;
-            const dy = y - touchstartY; const dx = x - touchstartX;
-            // Only handle when pulling down from top and vertical intent
-            if (!ptrArmed || dy <= 0 || Math.abs(dy) < Math.abs(dx)) return;
-            // prevent native refresh
-            e.preventDefault();
-            ptrActive = true; ptrPull = Math.min(PTR_MAX, dy * 0.6);
-            if (ptrEl) {
-                ptrEl.style.transform = `translateY(${Math.max(0, ptrPull - 60)}px)`;
-                if (ptrPull >= PTR_THRESHOLD) ptrEl.classList.add('ptr-ready'); else ptrEl.classList.remove('ptr-ready');
-            }
-            if (pageContainer) pageContainer.style.transform = `translateY(${ptrPull}px)`;
-        }, { passive: false });
-    
-        document.body.addEventListener('touchend', e => {
-            touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY;
-            if (ptrActive && ptrPull >= PTR_THRESHOLD) {
-                // Lock in place briefly
-                if (pageContainer) pageContainer.style.transform = `translateY(56px)`;
-                performPTRRefresh();
-                return;
-            }
-            resetPTR();
-            handleSwipeGesture();
-        }, { passive: false });
-    
-        document.body.addEventListener('click', e => {
-            const iconButton = e.target.closest('.toolbar .icon-btn');
-            if (iconButton) {
-                iconButton.classList.add('animating');
-                iconButton.addEventListener('animationend', () => {
-                    iconButton.classList.remove('animating');
-                }, { once: true });
-            }
-        }, true);
+    // Helper untuk swipe
+    function handleSwipeGesture() {
+        const deltaX = touchendX - touchstartX;
+        const deltaY = touchendY - touchstartY;
+        if (Math.abs(deltaX) < Math.abs(deltaY) || Math.abs(deltaX) < 200) return;
 
-        document.body.addEventListener('click', (e) => {
-            if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
-                $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
-                closeModal($('#actionsMenu-modal'));
-            }
-    
-            const actionTarget = e.target.closest('[data-action]');
-            if (!actionTarget) return;
+        const container = $('.page-container');
+        const activeSubNav = container.querySelector('.sub-nav');
+        if (activeSubNav) {
+            const tabs = $$('.sub-nav-item', activeSubNav);
+            const activeTabIndex = tabs.findIndex(tab => tab.classList.contains('active'));
+            if (activeTabIndex === -1) return;
+            let nextTabIndex = (touchendX < touchstartX) ? activeTabIndex + 1 : activeTabIndex - 1;
+            if (nextTabIndex >= 0 && nextTabIndex < tabs.length) tabs[nextTabIndex].click();
+        } else {
+            let navIdsToShow = [];
+            if (appState.userRole === 'Owner') navIdsToShow = ['dashboard', 'pemasukan', 'pengeluaran', 'absensi', 'pengaturan'];
+            else if (appState.userRole === 'Editor') navIdsToShow = ['dashboard', 'pengeluaran', 'absensi', 'tagihan', 'pengaturan'];
+            else if (appState.userRole === 'Viewer') navIdsToShow = ['dashboard', 'stok', 'tagihan', 'laporan', 'pengaturan'];
             
-            const card = actionTarget.closest('[data-id]');
-            let { id, type } = { ...card?.dataset, ...actionTarget.dataset };
-            let expenseId = actionTarget.dataset.expenseId || card?.dataset.expenseId;
-            let manager = actionTarget.closest('.master-data-manager');
-            if (manager) type = manager.dataset.type;
-            let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
-    
-            switch (actionTarget.dataset.action) {
-                case 'toggle-more-actions':
-                    $('#quick-actions-grid')?.classList.toggle('actions-collapsed');
-                    break;
-                case 'view-invoice-items': {
-                    const expense = appState.expenses.find(e => e.id === id);
-                    if (expense && expense.items) {
-                        createModal('invoiceItemsDetail', {
-                            items: expense.items,
-                            totalAmount: expense.amount
-                        });
-                    } else {
-                        toast('error', 'Rincian item tidak ditemukan.');
-                    }
-                    break;
-                }
-                case 'trigger-file-input': {
-                    const targetName = actionTarget.dataset.target;
-                    const input = $(`input[name="${targetName}"]`);
-                    if (input) input.click();
-                    break;
-                }
-                
-                case 'view-attachment': createModal('imageView', { src: actionTarget.dataset.src }); break;
-                case 'navigate': handleNavigation(navTarget); break;
-                case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
-                case 'open-detail': {
-                    if (!card) return; e.preventDefault();
-                    const sourceList = (type === 'termin') ? appState.incomes : appState.fundingSources;
-                    const item = sourceList.find(i => i.id === id);
-                    if (item) {
-                        const content = _createDetailContentHTML(item, type);
-                        const title = `Detail ${type === 'termin' ? 'Termin' : 'Pinjaman'}`;
-                        createModal('dataDetail', { title, content });
-                    }
-                    break;
-                }
-                case 'delete-item': 
-                    if (isViewer()) return; 
-                    closeModal($('#billActionsModal-modal')); // Tambahkan ini
-                    handleDeleteItem(expenseId || id, type); 
-                    break;
+            const accessibleLinks = ALL_NAV_LINKS.filter(link => navIdsToShow.includes(link.id));
+            const currentAccessibleIndex = accessibleLinks.findIndex(link => link.id === appState.activePage);
+            if (currentAccessibleIndex === -1) return;
+            let nextNavIndex = (touchendX < touchstartX) ? currentAccessibleIndex + 1 : currentAccessibleIndex - 1;
+            if (nextNavIndex >= 0 && nextNavIndex < accessibleLinks.length) handleNavigation(accessibleLinks[nextNavIndex].id);
+        }
+    }
 
-                case 'edit-item': 
-                    if (isViewer()) return; 
-                    closeModal($('#billActionsModal-modal')); // Tambahkan ini
-                    handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); 
-                    break;
+    // Helper untuk Pull-to-Refresh
+    function resetPTR(animated = true) {
+        ptrPull = 0; ptrActive = false; ptrArmed = false;
+        if (ptrEl) {
+            if (!animated) ptrEl.style.transition = 'none';
+            ptrEl.style.transform = `translateY(-70px)`;
+            void ptrEl.offsetHeight;
+            ptrEl.style.transition = '';
+            ptrEl.classList.remove('ptr-ready');
+        }
+        if (pageContainer) {
+            if (!animated) pageContainer.style.transition = 'none';
+            pageContainer.style.transform = '';
+            void pageContainer.offsetHeight;
+            pageContainer.style.transition = '';
+        }
+    }
+    async function performPTRRefresh() {
+        try {
+            toast('syncing', 'Memuat...');
+            await Promise.resolve(syncOfflineData?.());
+            if (appState.activePage === 'dashboard') await renderDashboardPage();
+            else if (appState.activePage === 'tagihan') await renderTagihanPage();
+            else if (appState.activePage === 'laporan') await renderLaporanPage();
+            else renderPageContent();
+        } finally {
+            hideToast();
+            resetPTR();
+        }
+    }
 
-                case 'pay-bill': 
-                    if (isViewer()) return; 
-                    closeModal($('#billActionsModal-modal')); // Tambahkan ini
-                    if (id) handlePayBillModal(id); 
-                    break;
-    
-                case 'open-bill-detail': 
-                    if(card) { e.preventDefault(); }
-                    closeModal($('#billActionsModal-modal')); // Tambahkan ini
-                    handleOpenBillDetail(id, expenseId); 
-                    break;
-                    
-                case 'open-bill-actions-modal': {
-                    if (isViewer()) { 
-                        handleOpenBillDetail(id, expenseId); // Viewer langsung lihat detail
-                        return; 
-                    }
+    // === Bagian 2: Pendaftaran Semua Event Listener ===
+
+    // Listener untuk Selection Bar
+    $('#close-selection-btn')?.addEventListener('click', exitSelectionMode);
+
+    // Listener untuk Interaksi Sentuh (Touch)
+    document.body.addEventListener('touchstart', e => {
+        touchstartX = e.changedTouches[0].screenX;
+        touchstartY = e.changedTouches[0].screenY;
+        const touchY = e.changedTouches[0].clientY;
+        const touchAreaHeight = 50;
+        const inTouchArea = touchY < touchAreaHeight;
+        const scroller = pageContainer || document.scrollingElement;
+        const atTop = scroller ? (scroller.scrollTop <= 0) : (window.scrollY <= 0);
+        ptrArmed = atTop && inTouchArea && appState.activePage === 'dashboard';
+        ptrActive = false;
+        ptrPull = 0;
+    }, { passive: true });
+
+    document.body.addEventListener('touchmove', e => {
+        const y = e.changedTouches[0].screenY; const x = e.changedTouches[0].screenX;
+        const dy = y - touchstartY; const dx = x - touchstartX;
+        if (!ptrArmed || dy <= 0 || Math.abs(dy) < Math.abs(dx)) return;
+        e.preventDefault();
+        ptrActive = true; ptrPull = Math.min(PTR_MAX, dy * 0.6);
+        if (ptrEl) {
+            ptrEl.style.transform = `translateY(${Math.max(0, ptrPull - 70)}px)`;
+            if (ptrPull >= PTR_THRESHOLD) ptrEl.classList.add('ptr-ready'); else ptrEl.classList.remove('ptr-ready');
+        }
+        if (pageContainer) pageContainer.style.transform = `translateY(${ptrPull}px)`;
+    }, { passive: false });
+
+    document.body.addEventListener('touchend', e => {
+        touchendX = e.changedTouches[0].screenX; touchendY = e.changedTouches[0].screenY;
+        if (ptrActive && ptrPull >= PTR_THRESHOLD) {
+            if (pageContainer) pageContainer.style.transform = `translateY(56px)`;
+            performPTRRefresh();
+            return;
+        }
+        resetPTR();
+        handleSwipeGesture();
+    }, { passive: true });
+
+    // Listener untuk Long-Press
+    document.body.addEventListener('pointerdown', e => {
+        const card = e.target.closest('.card-list-item[data-id]');
+        if (card) {
+            let pageContext = '';
+            if (appState.activePage === 'tagihan') {
+                pageContext = 'tagihan';
+            } else if (appState.activePage === 'pemasukan') {
+                const activeTab = $('.sub-nav-item.active')?.dataset.tab;
+                if (activeTab === 'termin') pageContext = 'pemasukan_termin';
+                else if (activeTab === 'pinjaman') pageContext = 'pemasukan_pinjaman';
+            }
+            if (pageContext) {
+                isLongPress = false;
+                longPressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    enterSelectionMode(card, pageContext);
+                }, 500);
+            }
+        }
+    }, true);
+    document.body.addEventListener('pointerup', () => clearTimeout(longPressTimer), true);
+    document.body.addEventListener('pointermove', () => clearTimeout(longPressTimer), true);
+
+    // SATU-SATUNYA Listener untuk Klik
+    document.body.addEventListener('click', (e) => {
+        // Prioritas 1: Cek apakah sedang dalam mode seleksi
+        if (appState.selectionMode.active) {
+            const card = e.target.closest('.card-list-item[data-id]');
+            if (card) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isLongPress) {
+                    toggleSelection(card.dataset.id);
+                }
+                return; // Hentikan proses jika klik terjadi pada kartu dalam mode seleksi
+            }
+        }
+
+        // Prioritas 2: Logika lain yang perlu dicek pada setiap klik
+        const iconButton = e.target.closest('.toolbar .icon-btn');
+        if (iconButton) {
+            iconButton.classList.add('animating');
+            iconButton.addEventListener('animationend', () => iconButton.classList.remove('animating'), { once: true });
+        }
+        if (!e.target.closest('.custom-select-wrapper') && !e.target.closest('.actions-menu')) {
+            $$('.custom-select-wrapper').forEach(w => w.classList.remove('active'));
+            closeModal($('#actionsMenu-modal'));
+        }
+
+        // Prioritas 3: Jalankan aksi utama berdasarkan atribut 'data-action'
+        const actionTarget = e.target.closest('[data-action]');
+        if (!actionTarget) return;
+
+        const card = actionTarget.closest('[data-id]');
+        let { id, type } = { ...card?.dataset, ...actionTarget.dataset };
+        let expenseId = actionTarget.dataset.expenseId || card?.dataset.expenseId;
+        let manager = actionTarget.closest('.master-data-manager');
+        if (manager) type = manager.dataset.type;
+        let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
+
+        switch (actionTarget.dataset.action) {
+            case 'toggle-more-actions':
+                $('#quick-actions-grid')?.classList.toggle('actions-collapsed');
+                break;
+            case 'view-invoice-items': {
+                const expense = appState.expenses.find(e => e.id === id);
+                if (expense && expense.items) {
+                    createModal('invoiceItemsDetail', { items: expense.items, totalAmount: expense.amount });
+                } else {
+                    toast('error', 'Rincian item tidak ditemukan.');
+                }
+                break;
+            }
+            case 'trigger-file-input': {
+                const targetName = actionTarget.dataset.target;
+                const input = $(`input[name="${targetName}"]`);
+                if (input) input.click();
+                break;
+            }
+            case 'view-attachment': createModal('imageView', { src: actionTarget.dataset.src }); break;
+            case 'navigate': handleNavigation(navTarget); break;
+            case 'auth-action': createModal(appState.currentUser ? 'confirmLogout' : 'login'); break;
+            case 'open-detail': {
+                if (!card) return; e.preventDefault();
+                const sourceList = (type === 'termin') ? appState.incomes : appState.fundingSources;
+                const item = sourceList.find(i => i.id === id);
+                if (item) {
+                    const content = _createDetailContentHTML(item, type);
+                    createModal('dataDetail', { title: `Detail ${type === 'termin' ? 'Termin' : 'Pinjaman'}`, content });
+                }
+                break;
+            }
+            case 'delete-item': 
+                if (isViewer()) return; 
+                closeModal($('#billActionsModal-modal'));
+                handleDeleteItem(expenseId || id, type); 
+                break;
+            case 'edit-item': 
+                if (isViewer()) return; 
+                closeModal($('#billActionsModal-modal'));
+                handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); 
+                break;
+            case 'pay-bill': 
+                if (isViewer()) return; 
+                closeModal($('#billActionsModal-modal'));
+                if (id) handlePayBillModal(id); 
+                break;
+            case 'open-bill-detail': 
+                if(card) { e.preventDefault(); }
+                closeModal($('#billActionsModal-modal'));
+                handleOpenBillDetail(id, expenseId); 
+                break;
+            case 'open-bill-actions-modal': {
+                if (isViewer()) { 
+                    handleOpenBillDetail(id, expenseId);
+                    return; 
+                }
+                const bill = appState.bills.find(b => b.id === id);
+                if (!bill) {
+                    toast('error', 'Data tagihan tidak ditemukan.');
+                    return;
+                }
+                const actions = [];
+                actions.push({ label: 'Lihat Detail Lengkap', action: 'open-bill-detail', icon: 'visibility', id, type: 'bill', expenseId });
+                if (bill.status === 'unpaid') {
+                    actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type: 'bill' });
+                }
+                if (bill.expenseId) {
+                    actions.push({ label: 'Edit', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
+                    actions.push({ label: 'Hapus', action: 'delete-item', icon: 'delete', id: bill.expenseId, type: 'expense' });
+                } else if (bill.type === 'gaji') {
+                    actions.push({ label: 'Hapus Tagihan', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
+                }
+                createModal('billActionsModal', { bill, actions });
+                break;
+            }
+            case 'open-actions': {
+                if (isViewer()) return; e.preventDefault();
+                let actions = [];
+                if (type === 'bill') {
                     const bill = appState.bills.find(b => b.id === id);
-                    if (!bill) {
-                        toast('error', 'Data tagihan tidak ditemukan.');
-                        return;
-                    }
-    
-                    // Kumpulkan semua kemungkinan aksi
-                    const actions = [];
-                    actions.push({ label: 'Lihat Detail Lengkap', action: 'open-bill-detail', icon: 'visibility', id, type: 'bill', expenseId });
-                    
-                    if (bill.status === 'unpaid') {
-                        actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type: 'bill' });
-                    }
+                    if (!bill) return;
+                    if (bill.status === 'unpaid') actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type });
                     if (bill.expenseId) {
                         actions.push({ label: 'Edit', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
                         actions.push({ label: 'Hapus', action: 'delete-item', icon: 'delete', id: bill.expenseId, type: 'expense' });
                     } else if (bill.type === 'gaji') {
                         actions.push({ label: 'Hapus Tagihan', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
                     }
-    
-                    createModal('billActionsModal', { bill, actions });
-                    break;
+                } else if (type === 'expense') {
+                     actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
+                } else {
+                    const list = type === 'termin' ? appState.incomes : appState.fundingSources;
+                    const item = list.find(i => i.id === id);
+                    if (!item) return;
+                    actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
+                    const isPaid = item.status === 'paid' || ((item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0)) <= 0;
+                    if (type === 'pinjaman' && !isPaid) actions.unshift({ label: 'Bayar', action: 'pay-item', icon: 'payment', id, type });
                 }
-
-                case 'open-actions': {
-                    if (isViewer()) return; e.preventDefault();
-                    let actions = [];
-                    if (type === 'bill') {
-                        const bill = appState.bills.find(b => b.id === id);
-                        if (!bill) return;
-                        if (bill.status === 'unpaid') actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type });
-                        if (bill.expenseId) {
-                            actions.push({ label: 'Edit', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
-                            actions.push({ label: 'Hapus', action: 'delete-item', icon: 'delete', id: bill.expenseId, type: 'expense' });
-                        } else if (bill.type === 'gaji') {
-                            actions.push({ label: 'Hapus Tagihan', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
-                        }
-                    } else if (type === 'expense') {
-                         actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
-                    } else {
-                        const list = type === 'termin' ? appState.incomes : appState.fundingSources;
-                        const item = list.find(i => i.id === id);
-                        if (!item) return;
-                        actions = [{ label: 'Edit', action: 'edit-item', icon: 'edit', id, type }, { label: 'Hapus', action: 'delete-item', icon: 'delete', id, type }];
-                        const isPaid = item.status === 'paid' || ((item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0)) <= 0;
-                        if (type === 'pinjaman' && !isPaid) actions.unshift({ label: 'Bayar', action: 'pay-item', icon: 'payment', id, type });
-                    }
-                    createModal('actionsMenu', { actions, targetRect: actionTarget.getBoundingClientRect() });
-                    break;
-                }
-                case 'delete-item': if (isViewer()) return; handleDeleteItem(expenseId || id, type); break;
-                case 'edit-item': if (isViewer()) return; handleEditItem(expenseId || id, type === 'bill' ? 'expense' : type); break;
-                case 'pay-item': if (isViewer()) return; if (id && type) handlePaymentModal(id, type); break;
-                case 'pay-bill': if (isViewer()) return; if (id) handlePayBillModal(id); break;
-                case 'manage-master': if (isViewer()) return; handleManageMasterData(actionTarget.dataset.type); break;
-                case 'manage-master-global':
-                     if (isViewer()) return;
-                     createModal('dataDetail', { title: 'Pilih Master Data', content: `<div class="settings-list">${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `<div class="settings-list-item" data-action="manage-master" data-type="${key}"><div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div><span class="label">${config.title}</span></div>`).join('')}</div>`});
-                    break;
-                case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
-                case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
-                case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
-                case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
-                case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
-                case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
-                case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
-                case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
-                case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
-                case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
-                case 'download-attachment': _downloadAttachment(actionTarget.dataset.url, actionTarget.dataset.filename); break;
-                case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
-                case 'download-report': _handleDownloadReport('pdf'); break;
-                case 'download-csv': _handleDownloadReport('csv'); break;
+                createModal('actionsMenu', { actions, targetRect: actionTarget.getBoundingClientRect() });
+                break;
             }
-        });
-    
-        window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online'); syncOfflineData(); });
-        window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
-        if (!navigator.onLine) toast('offline', 'Anda sedang offline');
-        
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js').then(registration => {
-                    console.log('ServiceWorker registration successful');
-                    
-                    registration.onupdatefound = () => {
-                        const installingWorker = registration.installing;
-                        if (installingWorker == null) return;
-                        
-                        installingWorker.onstatechange = () => {
-                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                // Versi baru telah siap. Tampilkan notifikasi snackbar.
-                                const updateNotif = document.getElementById('update-notification');
-                                const reloadBtn = document.getElementById('reload-app-btn');
-
-                                const triggerUpdate = () => {
-                                    sessionStorage.setItem('appJustUpdated', 'true');
-                                    installingWorker.postMessage({ action: 'skipWaiting' });
-                                };
-
-                                if (updateNotif && reloadBtn) {
-                                    updateNotif.classList.add('show');
-                                    reloadBtn.addEventListener('click', triggerUpdate, { once: true });
-
-                                    // PROAKTIF: Jika pengguna beralih tab, update otomatis.
-                                    document.addEventListener('visibilitychange', () => {
-                                        if (document.visibilityState === 'hidden') {
-                                            triggerUpdate();
-                                        }
-                                    }, { once: true });
-                                }
-                            }
-                        };
-                    };
-
-                }).catch(error => {
-                    console.log('ServiceWorker registration failed: ', error);
-                });
-
-                let refreshing;
-                navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    if (refreshing) return;
-                    // Tampilkan pesan "Memperbarui" sebelum memuat ulang
-                    if (sessionStorage.getItem('appJustUpdated') === 'true') {
-                         toast('syncing', 'Memperbarui aplikasi...');
-                    }
-                    window.location.reload();
-                    refreshing = true;
-                });
-            });
+            case 'pay-item': if (isViewer()) return; if (id && type) handlePaymentModal(id, type); break;
+            case 'manage-master': if (isViewer()) return; handleManageMasterData(actionTarget.dataset.type); break;
+            case 'manage-master-global':
+                 if (isViewer()) return;
+                 createModal('dataDetail', { title: 'Pilih Master Data', content: `<div class="settings-list">${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `<div class="settings-list-item" data-action="manage-master" data-type="${key}"><div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div><span class="label">${config.title}</span></div>`).join('')}</div>`});
+                break;
+            case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
+            case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
+            case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
+            case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
+            case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
+            case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
+            case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
+            case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
+            case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
+            case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
+            case 'download-attachment': _downloadAttachment(actionTarget.dataset.url, actionTarget.dataset.filename); break;
+            case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
+            case 'download-report': _handleDownloadReport('pdf'); break;
+            case 'download-csv': _handleDownloadReport('csv'); break;
         }
-    }
-       
-    function updateHeaderTitle() {
-        const pageTitleEl = $('#page-label-name');
-        if (!pageTitleEl) return;
-        const currentPageLink = ALL_NAV_LINKS.find(link => link.id === appState.activePage);
-        pageTitleEl.textContent = currentPageLink ? currentPageLink.label : 'Halaman';
-    }
+    });
 
-    function handleNavigation(pageId) {
-        if (!pageId || appState.activePage === pageId) return;
-        appState.activePage = pageId;
-        localStorage.setItem('lastActivePage', pageId);
-        updateHeaderTitle(); 
-        renderUI();
-    }
+    // Listener untuk Status Online/Offline & Service Worker
+    window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online'); syncOfflineData(); });
+    window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
+    if (!navigator.onLine) toast('offline', 'Anda sedang offline');
     
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./service-worker.js').then(registration => {
+                console.log('ServiceWorker registration successful');
+                registration.onupdatefound = () => {
+                    const installingWorker = registration.installing;
+                    if (installingWorker == null) return;
+                    installingWorker.onstatechange = () => {
+                        if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            const updateNotif = document.getElementById('update-notification');
+                            const reloadBtn = document.getElementById('reload-app-btn');
+                            const triggerUpdate = () => {
+                                sessionStorage.setItem('appJustUpdated', 'true');
+                                installingWorker.postMessage({ action: 'skipWaiting' });
+                            };
+                            if (updateNotif && reloadBtn) {
+                                updateNotif.classList.add('show');
+                                reloadBtn.addEventListener('click', triggerUpdate, { once: true });
+                                document.addEventListener('visibilitychange', () => {
+                                    if (document.visibilityState === 'hidden') triggerUpdate();
+                                }, { once: true });
+                            }
+                        }
+                    };
+                };
+            }).catch(error => console.log('ServiceWorker registration failed: ', error));
+
+            let refreshing;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return;
+                if (sessionStorage.getItem('appJustUpdated') === 'true') {
+                     toast('syncing', 'Memperbarui aplikasi...');
+                }
+                window.location.reload();
+                refreshing = true;
+            });
+        });
+    }
+}
+
     // =======================================================
     //         FUNGSI-FUNGSI BARU UNTUK TAGIHAN
     // =======================================================
@@ -3160,66 +3283,57 @@ async function handleManageMasterData(type) {
             </div>`;
         }
         
+        // Variabel uploadButtonsHTML dideklarasikan di sini
         let uploadButtonsHTML = '';
-        if (!isViewer() && expenseData.type === 'material') {
+        
+        let attachmentsHTML = '';
+    
+        // 1. Logika untuk Tipe Material
+        if (expenseData.type === 'material') {
             const buttons = [];
-            if (!expenseData.invoiceUrl) {
-                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`);
+            if (!isViewer()) {
+                if (!expenseData.invoiceUrl) {
+                    buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`);
+                }
+                if (!expenseData.deliveryOrderUrl) {
+                    buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`);
+                }
             }
-            if (!expenseData.deliveryOrderUrl) {
-                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`);
-            }
-            if (buttons.length > 0) {
-                uploadButtonsHTML = `<div class="rekap-actions" style="grid-template-columns: repeat(${buttons.length}, 1fr); margin-top: 1rem;">${buttons.join('')}</div>`;
-            }
+            
+            // [PERBAIKAN] Hapus 'let' di sini. Kita hanya menugaskan nilai baru.
+            uploadButtonsHTML = buttons.length > 0 
+                ? `<div class="rekap-actions" style="grid-template-columns: repeat(${buttons.length}, 1fr); margin-top: 1rem;">${buttons.join('')}</div>`
+                : '';
+    
+            attachmentsHTML = `
+                <h5 class="detail-section-title">Lampiran</h5>
+                <div class="attachment-gallery">
+                    ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
+                    ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
+                </div>
+                ${uploadButtonsHTML}
+            `;
+        
+        // 2. Logika untuk Tipe Lainnya
+        } else if (expenseData.attachmentUrl) {
+            attachmentsHTML = `
+                <h5 class="detail-section-title">Lampiran</h5>
+                <div class="attachment-gallery">
+                    ${createAttachmentItem(expenseData.attachmentUrl, 'Lampiran', 'attachmentUrl')}
+                </div>
+            `;
+        
+        // 3. Logika jika lampiran belum ada
+        } else if (!isViewer()) {
+             attachmentsHTML = `
+                <h5 class="detail-section-title">Lampiran</h5>
+                <div class="rekap-actions" style="grid-template-columns: 1fr; margin-top: 1rem;">
+                    <button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="attachmentUrl">
+                        Upload Lampiran
+                    </button>
+                </div>
+            `;
         }
-    
-    let attachmentsHTML = '';
-    
-    // 1. Logika untuk Tipe Material (tetap sama)
-    if (expenseData.type === 'material') {
-        const buttons = [];
-        if (!isViewer()) {
-            if (!expenseData.invoiceUrl) {
-                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`);
-            }
-            if (!expenseData.deliveryOrderUrl) {
-                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`);
-            }
-        }
-        let uploadButtonsHTML = buttons.length > 0 
-            ? `<div class="rekap-actions" style="grid-template-columns: repeat(${buttons.length}, 1fr); margin-top: 1rem;">${buttons.join('')}</div>`
-            : '';
-
-        attachmentsHTML = `
-            <h5 class="detail-section-title">Lampiran</h5>
-            <div class="attachment-gallery">
-                ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
-                ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
-            </div>
-            ${uploadButtonsHTML}
-        `;
-    
-    // 2. Logika BARU untuk Tipe Lainnya (Operasional, dll)
-    } else if (expenseData.attachmentUrl) {
-        attachmentsHTML = `
-            <h5 class="detail-section-title">Lampiran</h5>
-            <div class="attachment-gallery">
-                ${createAttachmentItem(expenseData.attachmentUrl, 'Lampiran', 'attachmentUrl')}
-            </div>
-        `;
-    
-    // 3. Logika BARU jika lampiran belum ada untuk tipe non-material
-    } else if (!isViewer()) {
-         attachmentsHTML = `
-            <h5 class="detail-section-title">Lampiran</h5>
-            <div class="rekap-actions" style="grid-template-columns: 1fr; margin-top: 1rem;">
-                <button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="attachmentUrl">
-                    Upload Lampiran
-                </button>
-            </div>
-        `;
-    }
             
         return `
             <div class="payment-summary">
@@ -3233,7 +3347,7 @@ async function handleManageMasterData(type) {
             ${attachmentsHTML}
         `;
     }
-    
+        
     function _injectExpenseThumbnails(expenses) {
         try {
             const mapById = new Map(expenses.map(e => [e.id, e]));
