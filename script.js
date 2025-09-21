@@ -38,6 +38,7 @@ async function main() {
         { id: 'pemasukan', icon: 'account_balance_wallet', label: 'Pemasukan', roles: ['Owner'] },
         { id: 'pengeluaran', icon: 'post_add', label: 'Pengeluaran', roles: ['Owner', 'Editor'] },
         { id: 'absensi', icon: 'person_check', label: 'Absensi', roles: ['Owner', 'Editor'] },
+        { id: 'jurnal', icon: 'summarize', label: 'Jurnal', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'stok', icon: 'inventory_2', label: 'Stok', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'tagihan', icon: 'receipt_long', label: 'Tagihan', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'laporan', icon: 'monitoring', label: 'Laporan', roles: ['Owner', 'Viewer'] },
@@ -826,6 +827,7 @@ async function main() {
             'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
             'laporan': renderLaporanPage,
             'absensi': renderAbsensiPage,
+            'jurnal': renderJurnalPage,
             'log_aktivitas': renderLogAktivitasPage,
         };
         
@@ -874,7 +876,7 @@ async function main() {
         const container = $('.page-container');
         container.innerHTML = `<div class="loader-container"><div class="spinner"></div></div>`;
     
-        // 1. Fetch data (kode ini tidak berubah)
+        // 1. Fetch data (baris ini tidak berubah)
         await Promise.all([
             fetchAndCacheData('projects', projectsCol, 'projectName'), 
             fetchAndCacheData('incomes', incomesCol), 
@@ -882,21 +884,41 @@ async function main() {
             fetchAndCacheData('bills', billsCol)
         ]);
         
-        // 2. Lakukan Kalkulasi (kode ini tidak berubah)
+        // 2. [MODIFIKASI] Lakukan Kalkulasi yang Sama Persis Seperti di Halaman Laporan
         const mainProject = appState.projects.find(p => p.projectType === 'main_income');
-        const internalProjects = appState.projects.filter(p => p.projectType === 'internal_expense');
+        const internalProjects = appState.projects.filter(p => p.id !== mainProject?.id);
+        
         const pendapatan = appState.incomes.filter(i => i.projectId === mainProject?.id).reduce((sum, i) => sum + i.amount, 0);
         const hpp_material = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'material').reduce((sum, e) => sum + e.amount, 0);
-        const hpp_gaji = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0);
-        const hpp = hpp_material + hpp_gaji;
+
+        // Menggunakan data 'bills' yang sudah di-fetch
+        const paidSalaryBills = appState.bills.filter(b => b.type === 'gaji' && b.status === 'paid');
+        
+        const hpp_gaji = paidSalaryBills
+            .filter(b => b.projectId === mainProject?.id)
+            .reduce((sum, b) => sum + b.amount, 0);
+            
+        const bebanGajiInternal = paidSalaryBills
+            .filter(b => internalProjects.some(p => p.id === b.projectId))
+            .reduce((sum, b) => sum + b.amount, 0);
+
+        // [LOGIKA BARU] Menambahkan pengeluaran "Lainnya" dari proyek utama ke HPP
+        const hpp_lainnya = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'lainnya').reduce((sum, e) => sum + e.amount, 0);
+
+        // [MODIFIKASI] Total HPP sekarang mencakup material, gaji, dan lainnya
+        const hpp = hpp_material + hpp_gaji + hpp_lainnya;
         const labaKotor = pendapatan - hpp;
         const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
-        const bebanInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        
+        const bebanExpenseInternal = appState.expenses.filter(e => internalProjects.some(p => p.id === e.projectId)).reduce((sum, e) => sum + e.amount, 0);
+        const bebanInternal = bebanExpenseInternal + bebanGajiInternal;
+
         const labaBersih = labaKotor - bebanOperasional - bebanInternal;
+
+        // Bagian lain dari fungsi ini (untuk menampilkan HTML) tidak berubah
         const totalUnpaid = appState.bills.filter(b => b.status === 'unpaid').reduce((sum, b) => sum + (b.amount - (b.paidAmount || 0)), 0);
     
         const projectsWithBudget = appState.projects.filter(p => p.budget && p.budget > 0).map(p => {
-            // Logika filter yang salah sudah dihapus dari sini
             const actual = appState.expenses
                 .filter(e => e.projectId === p.id)
                 .reduce((sum, e) => sum + e.amount, 0);
@@ -931,7 +953,7 @@ async function main() {
                 </div>
             </div>`;
     
-            const projectBudgetHTML = `
+        const projectBudgetHTML = `
             <h5 class="section-title-owner">Sisa Anggaran Proyek</h5>
             <div class="card card-pad">
                 ${projectsWithBudget.length > 0 ? projectsWithBudget.map(p => `
@@ -1000,7 +1022,7 @@ async function main() {
 
         container.innerHTML = balanceCardsHTML + quickActionsHTML + projectBudgetHTML + dailyRecapHTML;
     }
-    
+
     async function renderPengaturanPage() {
         const container = $('.page-container');
         const { currentUser, userRole } = appState;
@@ -4619,8 +4641,165 @@ async function handleManageUsers() {
             }
         });
     }
-
+// =======================================================
+    //         FUNGSI-FUNGSI BARU UNTUK JURNAL ABSENSI
     // =======================================================
+
+    async function renderJurnalPage() {
+        const container = $('.page-container');
+        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+        
+        // Ambil semua data yang relevan
+        await Promise.all([
+            fetchAndCacheData('workers', workersCol, 'workerName'),
+            fetchAndCacheData('projects', projectsCol, 'projectName'),
+            fetchAndCacheData('attendanceRecords', attendanceRecordsCol, 'date')
+        ]);
+        
+        // Kelompokkan data absensi per hari
+        const groupedByDay = _groupAttendanceByDay(appState.attendanceRecords);
+        
+        // Urutkan hari dari yang terbaru
+        const sortedDays = Object.entries(groupedByDay).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+
+        if (sortedDays.length === 0) {
+            container.innerHTML = '<p class="empty-state">Belum ada data absensi yang tercatat.</p>';
+            return;
+        }
+
+        const listHTML = sortedDays.map(([date, data]) => {
+            const dayDate = new Date(date);
+            const formattedDate = dayDate.toLocaleDateString('id-ID', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+
+            return `
+                <div class="card card-list-item" data-action="view-jurnal-harian" data-date="${date}">
+                    <div class="card-list-item-content">
+                        <div class="card-list-item-details">
+                            <h5 class="card-list-item-title">${formattedDate}</h5>
+                            <p class="card-list-item-subtitle">${data.workerCount} Pekerja Hadir</p>
+                        </div>
+                        <div class="card-list-item-amount-wrapper">
+                            <strong class="card-list-item-amount negative">${fmtIDR(data.totalUpah)}</strong>
+                            <p class="card-list-item-repayment-info">Total Beban Upah</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
+    }
+
+    function _groupAttendanceByDay(records) {
+        const grouped = {};
+        records.forEach(rec => {
+            const dateStr = rec.date.toDate().toISOString().slice(0, 10);
+            if (!grouped[dateStr]) {
+                grouped[dateStr] = {
+                    records: [],
+                    totalUpah: 0,
+                    workerCount: 0
+                };
+            }
+            grouped[dateStr].records.push(rec);
+            grouped[dateStr].totalUpah += (rec.totalPay || 0);
+            if ((rec.totalPay || 0) > 0) {
+                grouped[dateStr].workerCount++;
+            }
+        });
+        return grouped;
+    }
+
+    function _renderJurnalHarianDetailPage(dateStr) {
+        const container = $('.page-container');
+        const dayData = _groupAttendanceByDay(appState.attendanceRecords)[dateStr];
+        if (!dayData) {
+            container.innerHTML = '<p class="empty-state">Data untuk tanggal ini tidak ditemukan.</p>';
+            return;
+        }
+
+        const projectIds = [...new Set(dayData.records.map(rec => rec.projectId))];
+        const projectsInvolved = projectIds.map(id => appState.projects.find(p => p.id === id)).filter(Boolean);
+
+        const projectFiltersHTML = `
+            <button class="sub-nav-item active" data-project-id="all">Semua Proyek</button>
+            ${projectsInvolved.map(p => `<button class="sub-nav-item" data-project-id="${p.id}">${p.projectName}</button>`).join('')}
+        `;
+
+        container.innerHTML = `
+            <div class="jurnal-detail-header">
+                <div id="jurnal-detail-summary" class="card card-pad summary-card">
+                    </div>
+                <div id="jurnal-project-filters" class="category-sub-nav">
+                    ${projectFiltersHTML}
+                </div>
+            </div>
+            <div id="jurnal-pekerja-list" class="jurnal-pekerja-list">
+                </div>
+        `;
+
+        _renderJurnalPekerjaList(dayData.records, 'all');
+
+        $('#jurnal-project-filters').addEventListener('click', e => {
+            const btn = e.target.closest('.sub-nav-item');
+            if (btn) {
+                $('#jurnal-project-filters .active').classList.remove('active');
+                btn.classList.add('active');
+                _renderJurnalPekerjaList(dayData.records, btn.dataset.projectId);
+            }
+        });
+    }
+
+    function _renderJurnalPekerjaList(records, filterProjectId) {
+        const listContainer = $('#jurnal-pekerja-list');
+        const summaryContainer = $('#jurnal-detail-summary');
+
+        let filteredRecords = records;
+        if (filterProjectId !== 'all') {
+            filteredRecords = records.filter(rec => rec.projectId === filterProjectId);
+        }
+        
+        const totalBeban = filteredRecords.reduce((sum, rec) => sum + (rec.totalPay || 0), 0);
+        summaryContainer.innerHTML = `
+            <h5 class="summary-title">Total Beban Upah Hari Ini</h5>
+            <strong class="summary-total negative">${fmtIDR(totalBeban)}</strong>
+        `;
+
+        const getStatus = (rec) => {
+            if ((rec.totalPay || 0) <= 0) return { score: 3, text: 'Absen', class: 'status-absen' };
+            if (rec.attendanceStatus === 'half_day') return { score: 2, text: '1/2 Hari', class: 'status-setengah' };
+            return { score: 1, text: 'Hadir', class: 'status-hadir' };
+        };
+
+        const sortedRecords = [...filteredRecords].sort((a, b) => getStatus(a).score - getStatus(b).score);
+
+        if (sortedRecords.length === 0) {
+            listContainer.innerHTML = `<p class="empty-state">Tidak ada data absensi untuk filter ini.</p>`;
+            return;
+        }
+
+        const listHTML = sortedRecords.map(rec => {
+            const worker = appState.workers.find(w => w.id === rec.workerId);
+            const project = appState.projects.find(p => p.id === rec.projectId);
+            const status = getStatus(rec);
+            return `
+                <div class="card jurnal-pekerja-item">
+                    <div class="jurnal-pekerja-info">
+                        <strong>${worker?.workerName || 'Pekerja Dihapus'}</strong>
+                        <span>${project?.projectName || 'Proyek Dihapus'}</span>
+                    </div>
+                    <div class="jurnal-pekerja-status">
+                        <strong class="negative">${fmtIDR(rec.totalPay || 0)}</strong>
+                        <span class="status-badge ${status.class}">${status.text}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        listContainer.innerHTML = listHTML;
+    }
+        // =======================================================
     //         HALAMAN LAPORAN & LOG
     // =======================================================
     async function renderLaporanPage() {
@@ -4714,7 +4893,11 @@ async function handleManageUsers() {
             .filter(b => internalProjects.some(p => p.id === b.projectId)) // Gaji yang masuk beban internal
             .reduce((sum, b) => sum + b.amount, 0);
 
-        const hpp = hpp_material + hpp_gaji;
+        // [LOGIKA BARU] Menambahkan pengeluaran "Lainnya" dari proyek utama ke HPP
+        const hpp_lainnya = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'lainnya').reduce((sum, e) => sum + e.amount, 0);
+
+        // [MODIFIKASI] Total HPP sekarang mencakup material, gaji, dan lainnya
+        const hpp = hpp_material + hpp_gaji + hpp_lainnya;
         const labaKotor = pendapatan - hpp;
         const bebanOperasional = appState.expenses.filter(e => e.projectId === mainProject?.id && e.type === 'operasional').reduce((sum, e) => sum + e.amount, 0);
         
