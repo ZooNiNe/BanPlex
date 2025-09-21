@@ -518,3 +518,36 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .hidden-file-input {
   display: none;
 }
+
+/* Atur container tombol upload */
+.upload-buttons {
+  display: flex; /* Membuat item di dalamnya sejajar */
+  gap: 0.5rem;   /* Memberi jarak antar tombol */
+  margin-top: 0.25rem; /* Memberi sedikit jarak dari label di atasnya */
+}
+
+/* Atur tombol di dalamnya agar lebarnya sama */
+.upload-buttons .btn {
+  flex: 1; /* Membuat setiap tombol mengambil ruang yang sama */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem; /* Jarak antara ikon dan teks */
+}
+
+/* Sedikit penyesuaian untuk nama file */
+.file-name-display {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background-color: var(--background-alt);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+/* Penyesuaian untuk tombol di dalam modal */
+.modal-upload-buttons {
+  margin-top: 1rem;
+}
