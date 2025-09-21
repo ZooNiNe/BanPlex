@@ -1,4 +1,4 @@
-﻿﻿﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
+﻿﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
 // @ts-check
 
 // =======================================================
@@ -290,13 +290,15 @@ async function main() {
         modalEl.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', closeModalFunc));
         attachModalEventListeners(type, data, closeModalFunc);
     }  
-    function _createSalaryBillDetailContentHTML(bill) {
+    function _createSalaryBillDetailContentHTML(bill, payments) {
         const projectName = appState.projects.find(p => p.id === bill.projectId)?.projectName || 'Proyek tidak diketahui';
         const statusText = bill.status === 'paid' ? 'Lunas' : 'Belum Lunas';
         const statusClass = bill.status === 'paid' ? 'positive' : 'negative';
         const date = bill.createdAt?.toDate ? bill.createdAt.toDate().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : 'N/A';
+        
+        // [BARU] Buat blok HTML untuk riwayat pembayaran
+        const paymentHistoryHTML = _createPaymentHistoryHTML(payments);
     
-        // [STRUKTUR HTML BARU]
         return `
             <div class="detail-modal-header">
                 <h4>${bill.description}</h4>
@@ -317,10 +319,31 @@ async function main() {
                         <dd>${date}</dd>
                     </div>
                 </dl>
-            </div>
+                ${paymentHistoryHTML} </div>
         `;
     }
-
+    function _createPaymentHistoryHTML(payments) {
+        if (!payments || payments.length === 0) {
+            return ''; // Jangan tampilkan apa pun jika tidak ada riwayat
+        }
+    
+        const historyItems = payments.map(p => {
+            const paymentDate = p.date?.toDate ? p.date.toDate().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Tanggal tidak valid';
+            return `
+                <div class="payment-history-item">
+                    <dt>${paymentDate}</dt>
+                    <dd>${fmtIDR(p.amount)}</dd>
+                </div>
+            `;
+        }).join('');
+    
+        return `
+            <h5 class="detail-section-title">Riwayat Pembayaran</h5>
+            <dl class="detail-list">
+                ${historyItems}
+            </dl>
+        `;
+    }
     function getModalContent(type, data) {
         if (type === 'imageView') {
             return `<div class="image-view-modal" data-close-modal>
@@ -815,10 +838,6 @@ async function main() {
         }
     }
     
-// [HAPUS] Fungsi lama fetchAndCacheData
-    // const fetchAndCacheData = async (key, col, order = 'createdAt') => { ... };
-
-    // [BARU] Fungsi baru untuk mengambil dan menyimpan data master secara offline
     const fetchAndCacheData = async (key, col, order = 'createdAt') => {
         const cacheKey = `master_data:${key}`;
         try {
@@ -1395,14 +1414,14 @@ async function main() {
     
     async function renderTagihanPage() {
         const container = $('.page-container');
-        const tabs = [{ id: 'belum_lunas', label: 'Belum Lunas' }, { id: 'lunas', label: 'Lunas' }, { id: 'gaji', label: 'Gaji' }];
-    
-        // [MODIFIKASI] Menambahkan toolbar di atas navigasi tab
+        // [MODIFIKASI] Tab utama disederhanakan
+        const tabs = [{ id: 'unpaid', label: 'Belum Lunas' }, { id: 'paid', label: 'Lunas' }];
+        
         container.innerHTML = `
             <div class="toolbar" id="tagihan-toolbar">
                 <div class="search">
                     <span class="material-symbols-outlined">search</span>
-                    <input type="search" id="tagihan-search-input" placeholder="Cari deskripsi tagihan..." value="${appState.billsFilter.searchTerm}">
+                    <input type="search" id="tagihan-search-input" placeholder="Cari tagihan, proyek, supplier..." value="${appState.billsFilter.searchTerm}">
                 </div>
                 <button class="icon-btn" id="tagihan-filter-btn" title="Filter">
                     <span class="material-symbols-outlined">filter_list</span>
@@ -1414,38 +1433,58 @@ async function main() {
             <div class="sub-nav">
                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
             </div>
-            <div id="sub-page-content"><div class="loader-container"><div class="spinner"></div></div></div>
-            </div>
-            <div class="sub-nav">
-                ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
-            </div>
+            
+            <!-- [BARU] Kontainer untuk sub-nav kategori -->
+            <div id="category-sub-nav-container" class="category-sub-nav"></div>
 
             <div id="tagihan-summary-card" class="card card-pad summary-card" style="display: none;"></div>
-
             <div id="sub-page-content"><div class="loader-container"><div class="spinner"></div></div></div>
         `;        
     
         await Promise.all([
             fetchAndCacheData('projects', projectsCol, 'projectName'),
             fetchAndCacheData('expenses', expensesCol),
-            fetchAndCacheData('suppliers', suppliersCol, 'supplierName')
+            fetchAndCacheData('suppliers', suppliersCol, 'supplierName'),
+            fetchAndCacheData('workers', workersCol, 'workerName')
         ]);
     
-        let currentBills = []; // Simpan data tagihan saat ini
+        let currentBills = []; 
     
-        // [BARU] Fungsi untuk menerapkan filter & sort tanpa mengambil data ulang
         const applyFilterAndSort = () => {
             let filtered = [...currentBills];
-    
-            // 1. Terapkan filter pencarian
-            if (appState.billsFilter.searchTerm) {
-                filtered = filtered.filter(bill => bill.description.toLowerCase().includes(appState.billsFilter.searchTerm));
+
+            // 1. [BARU] Terapkan filter kategori terlebih dahulu
+            if (appState.billsFilter.category !== 'all') {
+                filtered = filtered.filter(bill => bill.type === appState.billsFilter.category);
             }
-            // 2. Terapkan filter proyek
+    
+            // 2. Terapkan filter pencarian (logika yang sudah diperbarui)
+            if (appState.billsFilter.searchTerm) {
+                const term = appState.billsFilter.searchTerm.toLowerCase();
+                filtered = filtered.filter(bill => {
+                    const descriptionMatch = bill.description.toLowerCase().includes(term);
+                    const project = appState.projects.find(p => p.id === bill.projectId);
+                    const projectMatch = project && project.projectName.toLowerCase().includes(term);
+                    let relatedNameMatch = false;
+                    if (bill.type === 'gaji') {
+                        const worker = appState.workers.find(w => w.id === bill.workerId);
+                        relatedNameMatch = worker && worker.workerName.toLowerCase().includes(term);
+                    } else if (bill.expenseId) {
+                        const expense = appState.expenses.find(e => e.id === bill.expenseId);
+                        if (expense && expense.supplierId) {
+                            const supplier = appState.suppliers.find(s => s.id === expense.supplierId);
+                            relatedNameMatch = supplier && supplier.supplierName.toLowerCase().includes(term);
+                        }
+                    }
+                    return descriptionMatch || projectMatch || relatedNameMatch;
+                });
+            }
+
+            // 3. Terapkan filter proyek
             if (appState.billsFilter.projectId !== 'all') {
                 filtered = filtered.filter(bill => bill.projectId === appState.billsFilter.projectId);
             }
-            // 3. Terapkan filter supplier
+            // 4. Terapkan filter supplier
             if (appState.billsFilter.supplierId !== 'all') {
                 filtered = filtered.filter(bill => {
                     const expense = appState.expenses.find(e => e.id === bill.expenseId);
@@ -1453,7 +1492,7 @@ async function main() {
                 });
             }
     
-            // 4. Terapkan pengurutan
+            // 5. Terapkan pengurutan
             filtered.sort((a, b) => {
                 let valA, valB;
                 if (appState.billsFilter.sortBy === 'amount') {
@@ -1463,28 +1502,23 @@ async function main() {
                     valA = a.dueDate?.seconds || 0;
                     valB = b.dueDate?.seconds || 0;
                 }
-    
                 return appState.billsFilter.sortDirection === 'asc' ? valA - valB : valB - valA;
             });
-            // 5. Kalkulasi dan tampilkan ringkasan
+            
+            // 6. Kalkulasi dan tampilkan ringkasan
             const summaryCard = $('#tagihan-summary-card');
             if (summaryCard) {
-                // Tampilkan ringkasan hanya jika filter supplier atau proyek aktif (bukan 'all')
                 const isFiltered = appState.billsFilter.projectId !== 'all' || appState.billsFilter.supplierId !== 'all';
-
                 if (isFiltered && filtered.length > 0) {
                     const totalAmount = filtered.reduce((sum, bill) => sum + bill.amount, 0);
                     const totalPaid = filtered.reduce((sum, bill) => sum + (bill.paidAmount || 0), 0);
                     const remainingAmount = totalAmount - totalPaid;
-
-                    // Dapatkan nama filter untuk ditampilkan di judul
                     let filterName = '';
                     if (appState.billsFilter.projectId !== 'all') {
                         filterName = appState.projects.find(p => p.id === appState.billsFilter.projectId)?.projectName || '';
                     } else if (appState.billsFilter.supplierId !== 'all') {
                         filterName = appState.suppliers.find(s => s.id === appState.billsFilter.supplierId)?.supplierName || '';
                     }
-
                     summaryCard.innerHTML = `
                         <h5 class="summary-title">Ringkasan untuk: ${filterName}</h5>
                         <div class="summary-grid">
@@ -1495,41 +1529,62 @@ async function main() {
                     `;
                     summaryCard.style.display = 'block';
                 } else {
-                    // Sembunyikan jika tidak ada filter atau tidak ada hasil
                     summaryCard.style.display = 'none';
                 }
             }
 
-            $('#sub-page-content').innerHTML = _getBillsListHTML(filtered, $('.sub-nav-item.active').dataset.tab);
+            // 7. Render daftar
+            $('#sub-page-content').innerHTML = _getBillsListHTML(filtered);
+        };
+
+        const _renderCategorySubNavAndList = () => {
+            const container = $('#category-sub-nav-container');
+            const counts = {
+                all: currentBills.length,
+                material: currentBills.filter(b => b.type === 'material').length,
+                operasional: currentBills.filter(b => b.type === 'operasional').length,
+                gaji: currentBills.filter(b => b.type === 'gaji').length,
+                lainnya: currentBills.filter(b => b.type === 'lainnya').length
+            };
+        
+            const categories = [
+                { id: 'all', label: 'Semua' },
+                { id: 'material', label: 'Material' },
+                { id: 'operasional', label: 'Operasional' },
+                { id: 'gaji', label: 'Gaji' },
+                { id: 'lainnya', label: 'Lainnya' }
+            ];
+        
+            container.innerHTML = categories
+                .filter(cat => counts[cat.id] > 0)
+                .map(cat => `<button class="sub-nav-item ${appState.billsFilter.category === cat.id ? 'active' : ''}" data-category="${cat.id}">${cat.label} (${counts[cat.id]})</button>`)
+                .join('');
+        
+            container.querySelectorAll('.sub-nav-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    appState.billsFilter.category = btn.dataset.category;
+                    container.querySelector('.active')?.classList.remove('active');
+                    btn.classList.add('active');
+                    applyFilterAndSort();
+                });
+            });
+        
+            applyFilterAndSort();
         };
     
         const renderTabContent = async (tabId) => {
+            appState.activeSubPage.set('tagihan', tabId);
+            appState.billsFilter.category = 'all'; // Reset filter kategori saat ganti tab utama
             const contentContainer = $('#sub-page-content');
             contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
     
-            let statusQuery;
-            const queries = [];
-    
-            if (tabId === 'belum_lunas') statusQuery = where("status", "==", "unpaid");
-            else if (tabId === 'lunas') statusQuery = where("status", "==", "paid");
-    
-            if (tabId === 'gaji') {
-                queries.push(where("type", "==", "gaji"));
-            } else {
-                queries.push(where("type", "!=", "gaji"), orderBy("type"));
-            }
-    
-            if (statusQuery) queries.push(statusQuery);
-            queries.push(orderBy("dueDate", "desc"));
-    
-            const q = query(billsCol, ...queries);
+            const q = query(billsCol, where("status", "==", tabId), orderBy("dueDate", "desc"));
             const billsSnap = await getDocs(q);
             currentBills = billsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    
-            applyFilterAndSort(); // Terapkan filter & sort ke data yang baru diambil
+            
+            _renderCategorySubNavAndList();
         };
     
-        // [MODIFIKASI] Event listener untuk toolbar
         $('#tagihan-search-input').addEventListener('input', (e) => {
             appState.billsFilter.searchTerm = e.target.value.toLowerCase();
             applyFilterAndSort();
@@ -1537,16 +1592,20 @@ async function main() {
         $('#tagihan-filter-btn').addEventListener('click', () => _showBillsFilterModal(applyFilterAndSort));
         $('#tagihan-sort-btn').addEventListener('click', () => _showBillsSortModal(applyFilterAndSort));
     
-        $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
-            $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            renderTabContent(e.currentTarget.dataset.tab);
-        }));
-    
+        $$('.sub-nav').forEach(nav => {
+            nav.addEventListener('click', e => {
+                const btn = e.target.closest('.sub-nav-item');
+                if (btn && !btn.closest('#category-sub-nav-container')) {
+                    $$('.sub-nav-item', nav).forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderTabContent(btn.dataset.tab);
+                }
+            });
+        });
+        
         await renderTabContent(tabs[0].id);
     }
     
-    // [BARU] Fungsi untuk menampilkan modal filter tagihan
     function _showBillsFilterModal(onApply) {
         const projectOptions = [{ value: 'all', text: 'Semua Proyek' }, ...appState.projects.map(p => ({ value: p.id, text: p.projectName }))];
         const supplierOptions = [{ value: 'all', text: 'Semua Supplier' }, ...appState.suppliers.map(s => ({ value: s.id, text: s.supplierName }))];
@@ -1581,7 +1640,6 @@ async function main() {
         });
     }
     
-    // [BARU] Fungsi untuk menampilkan modal sort tagihan
     function _showBillsSortModal(onApply) {
         const { sortBy, sortDirection } = appState.billsFilter;
         const content = `
@@ -1628,44 +1686,43 @@ async function main() {
         });
     }
     
-    // [FIXED] Blok kode duplikat telah dihapus dari sini
-    
-    function _getBillsListHTML(bills, tabId) {
+    function _getBillsListHTML(bills) {
         if (bills.length === 0) {
             let message = 'Tidak ada tagihan';
-            if (tabId === 'belum_lunas') message += ' yang perlu dibayar.';
-            else if (tabId === 'lunas') message += ' yang sudah lunas.';
-            else if (tabId === 'gaji') message += ' gaji.';
-            return `<p class="empty-state">${message}</p>`;
+            if (appState.billsFilter.searchTerm || appState.billsFilter.projectId !== 'all' || appState.billsFilter.supplierId !== 'all' || appState.billsFilter.category !== 'all') {
+                message += ' yang cocok dengan kriteria filter Anda.';
+            } else {
+                 message += ' dalam kategori ini.';
+            }
+            return `<p class="empty-state" style="margin-top: 2rem;">${message}</p>`;
         }
     
         return `
-        <div style="margin-top: 1.5rem;">
+        <div style="margin-top: 1rem;">
             ${bills.map(item => {
             let supplierName = '';
             if (item.expenseId) {
                 const expense = appState.expenses.find(e => e.id === item.expenseId);
                 if (expense && expense.supplierId) {
-                    const supplier = appState.suppliers.find(s => s.id === expense.supplierId);
-                    if (supplier) {
-                        supplierName = supplier.supplierName;
-                    }
+                    supplierName = appState.suppliers.find(s => s.id === expense.supplierId)?.supplierName || '';
                 }
+            } else if (item.type === 'gaji') {
+                supplierName = appState.workers.find(w => w.id === item.workerId)?.workerName || 'Gaji Karyawan';
             }
     
-            let badgeHTML = '';
+            // [MODIFIKASI] Logika untuk membuat badge proyek
             const project = appState.projects.find(p => p.id === item.projectId);
-    
-            if (project && project.projectType) {
+            let badgeHTML = '';
+            if (project) {
                 if (project.projectType === 'main_income') {
-                    badgeHTML = `<span class="project-type-badge project-type-main">Utama</span>`;
+                    badgeHTML = `<span class="category-badge category-main">Utama</span>`;
                 } else if (project.projectType === 'internal_expense') {
-                    badgeHTML = `<span class="project-type-badge project-type-internal">Internal</span>`;
+                    badgeHTML = `<span class="category-badge category-internal">Internal</span>`;
                 }
             }
+    
             const date = item.dueDate?.toDate ? item.dueDate.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Tanggal tidak valid';
             const subtitle = supplierName ? `${supplierName} · ${date}` : date;
-    
             const remainingAmount = (item.amount || 0) - (item.paidAmount || 0);
             const isPaid = remainingAmount <= 0;
             let secondaryInfoHTML = '';
@@ -1680,22 +1737,20 @@ async function main() {
     
             return `
             <div class="card card-list-item" data-id="${item.id}" data-type="bill" data-expense-id="${item.expenseId || ''}">
-                
                 <div class="card-list-item-content" data-action="open-bill-actions-modal"> 
                     <div class="card-list-item-details">
                         <h5 class="card-list-item-title">${item.description}</h5>
-                        <p class="card-list-item-subtitle">${subtitle}</p> 
+                        <p class="card-list-item-subtitle">${subtitle}</p>
+                        ${badgeHTML} 
                     </div>
                     <div class="card-list-item-amount-wrapper">
                         <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
                         ${secondaryInfoHTML}
                     </div>
                 </div>
-    
-                </div>
-            `}).join('')}
-        </div>
-        `;
+            </div>`;
+            }).join('')}
+        </div>`;
     }
     
     async function handlePayBill(billId) {
@@ -3169,6 +3224,7 @@ function init() {
             case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
             case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
             case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
+            case 'view-worker-recap': handleViewWorkerRecap(actionTarget.dataset); break;
             case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
             case 'user-action': if (isViewer()) return; handleUserAction(actionTarget.dataset); break;
             case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
@@ -3228,35 +3284,45 @@ function init() {
     //         FUNGSI-FUNGSI BARU UNTUK TAGIHAN
     // =======================================================
     async function handleOpenBillDetail(billId, expenseId) {
-        let bill = null;
-        if(billId) bill = appState.bills.find(b => b.id === billId);
-        
-        let targetExpenseId = expenseId || bill?.expenseId;
+    let bill = null;
+    if(billId) bill = appState.bills.find(b => b.id === billId);
     
-        if(!targetExpenseId && bill?.type !== 'gaji') {
-            toast('error', 'Data pengeluaran terkait tidak ditemukan.');
-            return;
-        }
-    
-        let content, title;
-    
-        if (bill && bill.type === 'gaji') {
-            content = _createSalaryBillDetailContentHTML(bill);
-            title = `Detail Tagihan: ${bill.description}`;
-        } else {
-            const expenseDoc = await getDoc(doc(expensesCol, targetExpenseId));
-            if(!expenseDoc.exists()){ toast('error', 'Data pengeluaran terkait tidak ditemukan.'); return; }
-            const expenseData = {id: expenseDoc.id, ...expenseDoc.data()};
-            content = await _createBillDetailContentHTML(bill, expenseData);
-            title = `Detail Pengeluaran: ${expenseData.description}`;
-        }
-        
-        createModal('dataDetail', { title, content });
+    // [MODIFIKASI] Ambil data pembayaran jika ada tagihan
+    let payments = [];
+    if (bill) {
+        const paymentsColRef = collection(db, 'teams', TEAM_ID, 'bills', billId, 'payments');
+        const paymentsSnap = await getDocs(query(paymentsColRef, orderBy("date", "desc")));
+        payments = paymentsSnap.docs.map(d => d.data());
+    }
+
+    let targetExpenseId = expenseId || bill?.expenseId;
+
+    if(!targetExpenseId && bill?.type !== 'gaji') {
+        toast('error', 'Data pengeluaran terkait tidak ditemukan.');
+        return;
+    }
+
+    let content, title;
+
+    if (bill && bill.type === 'gaji') {
+        // [MODIFIKASI] Kirim data pembayaran ke fungsi pembuat HTML
+        content = _createSalaryBillDetailContentHTML(bill, payments);
+        title = `Detail Tagihan: ${bill.description}`;
+    } else {
+        const expenseDoc = await getDoc(doc(expensesCol, targetExpenseId));
+        if(!expenseDoc.exists()){ toast('error', 'Data pengeluaran terkait tidak ditemukan.'); return; }
+        const expenseData = {id: expenseDoc.id, ...expenseDoc.data()};
+        // [MODIFIKASI] Kirim data pembayaran ke fungsi pembuat HTML
+        content = await _createBillDetailContentHTML(bill, expenseData, payments);
+        title = `Detail Pengeluaran: ${expenseData.description}`;
     }
     
-    async function _createBillDetailContentHTML(bill, expenseData) {
+    createModal('dataDetail', { title, content });
+}
+
+    async function _createBillDetailContentHTML(bill, expenseData, payments) {
         const remainingAmount = bill ? (bill.amount || 0) - (bill.paidAmount || 0) : 0;
-        
+    
         let itemsButtonHTML = '';
         if (expenseData.type === 'material' && expenseData.items && expenseData.items.length > 0) {
             itemsButtonHTML = `
@@ -3269,6 +3335,16 @@ function init() {
             `;
         }
     
+        // [BARU] Logika untuk menampilkan detail proyek
+        const project = appState.projects.find(p => p.id === expenseData.projectId);
+        const projectDetailsHTML = project ? `
+            <dl class="detail-list" style="margin-top: 1.5rem;">
+                <div class="category-title"><dt>Detail Proyek</dt><dd></dd></div>
+                <div><dt>Nama Proyek</dt><dd>${project.projectName}</dd></div>
+                ${project.budget > 0 ? `<div><dt>Anggaran</dt><dd>${fmtIDR(project.budget)}</dd></div>` : ''}
+            </dl>
+        ` : '';
+        const paymentHistoryHTML = _createPaymentHistoryHTML(payments);    
         const createAttachmentItem = (url, label, field) => {
             if (!url) return ''; // Jangan render jika tidak ada URL
             return `
@@ -3336,17 +3412,18 @@ function init() {
         }
             
         return `
-            <div class="payment-summary">
-                <div><span>Total Pengeluaran:</span><strong>${fmtIDR(expenseData.amount)}</strong></div>
-                ${bill ? `
-                <div><span>Sudah Dibayar:</span><strong>${fmtIDR(bill.paidAmount || 0)}</strong></div>
-                <div class="remaining"><span>Sisa Tagihan:</span><strong>${fmtIDR(remainingAmount)}</strong></div>
-                ` : `<div class="status"><span>Status:</span><strong style="color:var(--success)">Lunas</strong></div>`}
-            </div>
-            ${itemsButtonHTML}
-            ${attachmentsHTML}
-        `;
-    }
+        <div class="payment-summary">
+            <div><span>Total Pengeluaran:</span><strong>${fmtIDR(expenseData.amount)}</strong></div>
+            ${bill ? `
+            <div><span>Sudah Dibayar:</span><strong>${fmtIDR(bill.paidAmount || 0)}</strong></div>
+            <div class="remaining"><span>Sisa Tagihan:</span><strong>${fmtIDR(remainingAmount)}</strong></div>
+            ` : `<div class="status"><span>Status:</span><strong style="color:var(--success)">Lunas</strong></div>`}
+        </div>
+        ${paymentHistoryHTML} ${projectDetailsHTML}
+        ${itemsButtonHTML}
+        ${attachmentsHTML}
+    `;
+}
         
     function _injectExpenseThumbnails(expenses) {
         try {
@@ -3561,11 +3638,14 @@ function init() {
     // =======================================================
     
     async function renderAbsensiPage() {
+        // [PERBAIKAN] Pastikan baris ini ada. Inilah yang menyebabkan error.
         const container = $('.page-container');
+    
         const tabs = [
             {id:'manual', label:'Input Manual'},
             {id:'harian', label:'Absensi Harian'}, 
-            {id:'rekap', label:'Rekap Gaji'}
+            {id:'rekap', label:'Rekap Gaji'},
+            {id:'jurnal', label:'Jurnal Absensi'}
         ];
         container.innerHTML = `
             ${isViewer() ? '' : `<div class="attendance-header">
@@ -3583,7 +3663,7 @@ function init() {
             </div>
             <div id="sub-page-content"></div>
         `;
-
+    
         const renderTabContent = async (tabId) => {
             appState.activeSubPage.set('absensi', tabId);
             const contentContainer = $('#sub-page-content');
@@ -3594,14 +3674,14 @@ function init() {
                 fetchAndCacheData('professions', professionsCol, 'professionName'),
                 fetchAndCacheData('projects', projectsCol, 'projectName')
             ]);
-
+    
             if(tabId === 'harian') {
                 await _fetchTodaysAttendance();
                 contentContainer.innerHTML = _getDailyAttendanceHTML();
                 _initCustomSelects(contentContainer);
                 contentContainer.querySelector('#attendance-profession-filter')?.addEventListener('change', () => _rerenderAttendanceList());
                 contentContainer.querySelector('#attendance-project-id')?.addEventListener('change', () => _rerenderAttendanceList());
-
+    
             } else if (tabId === 'rekap') {
                 contentContainer.innerHTML = _getSalaryRecapHTML();
                 if(!isViewer()) {
@@ -3629,6 +3709,12 @@ function init() {
                 
                 _renderManualAttendanceList(dateInput.value, projectInput.value);
             }
+            else if (tabId === 'jurnal') {
+                contentContainer.innerHTML = _getAbsensiJurnalHTML();
+                const dateInput = $('#jurnal-tanggal');
+                dateInput.addEventListener('change', () => _renderAbsensiJurnalList(dateInput.value));
+                await _renderAbsensiJurnalList(dateInput.value);
+            }
         };
     
         $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
@@ -3642,7 +3728,7 @@ function init() {
         if($(`.sub-nav-item[data-tab="${lastSubPage}"]`)) $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
         await renderTabContent(lastSubPage);
     }
-    
+        
     function _getDailyAttendanceHTML() {
         const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         const projectOptions = appState.projects.map(p => ({value: p.id, text: p.projectName}));
@@ -4245,7 +4331,188 @@ function init() {
         }
     }
 
-// GANTI SELURUH FUNGSI handleManageUsers DI script.js
+function _getAbsensiJurnalHTML() {
+    const today = new Date().toISOString().slice(0,10);
+    return `
+        <div class="card card-pad" style="margin-bottom: 1.5rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="jurnal-tanggal">Pilih Tanggal Jurnal</label>
+                <input type="date" id="jurnal-tanggal" value="${today}">
+            </div>
+        </div>
+        <div id="jurnal-list-container">
+            <div class="loader-container"><div class="spinner"></div></div>
+        </div>
+    `;
+}
+
+async function _renderAbsensiJurnalList(dateStr) {
+    const container = $('#jurnal-list-container');
+    if (!container || !dateStr) return;
+    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+    const date = new Date(dateStr);
+    const startOfDay = new Date(date.setHours(0,0,0,0));
+    const endOfDay = new Date(date.setHours(23,59,59,999));
+
+    const q = query(attendanceRecordsCol, 
+        where('date', '>=', startOfDay),
+        where('date', '<=', endOfDay),
+        orderBy('date', 'desc')
+    );
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+        container.innerHTML = `<p class="empty-state">Tidak ada catatan absensi untuk tanggal ini.</p>`;
+        return;
+    }
+
+    const records = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+
+    const listHTML = records.map(rec => {
+        const worker = appState.workers.find(w => w.id === rec.workerId);
+        const project = appState.projects.find(p => p.id === rec.projectId);
+        const totalPay = rec.totalPay || 0;
+
+        let statusHTML = '';
+        if (rec.type === 'timestamp') {
+            const checkIn = rec.checkIn.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            if (rec.status === 'completed') {
+                const checkOut = rec.checkOut.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                statusHTML = `Masuk: ${checkIn} | Keluar: ${checkOut} (${rec.workHours.toFixed(1)} jam)`;
+            } else {
+                statusHTML = `Masuk: ${checkIn} (Belum Check-out)`;
+            }
+        } else { // manual
+            if (rec.attendanceStatus === 'full_day') statusHTML = 'Hadir (Sehari Penuh)';
+            else if (rec.attendanceStatus === 'half_day') statusHTML = 'Setengah Hari';
+            else statusHTML = 'Tidak Hadir';
+        }
+
+        return `
+            <div class="jurnal-item card">
+                <div class="jurnal-item-header">
+                    <strong>${worker?.workerName || 'Pekerja Dihapus'}</strong>
+                    <strong class="positive">${fmtIDR(totalPay)}</strong>
+                </div>
+                <div class="jurnal-item-details">
+                    <span>${project?.projectName || 'Proyek Dihapus'}</span>
+                    <span>${statusHTML}</span>
+                </div>
+                <div class="jurnal-item-actions">
+                    <button class="btn btn-secondary btn-sm" data-action="view-worker-recap" data-worker-id="${rec.workerId}">
+                        Lihat Rekap
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `<div class="jurnal-list">${listHTML}</div>`;
+}
+
+async function handleViewWorkerRecap(dataset) {
+    const workerId = dataset.workerId;
+    const worker = appState.workers.find(w => w.id === workerId);
+    if (!worker) {
+        toast('error', 'Data pekerja tidak ditemukan.');
+        return;
+    }
+
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const todayStr = today.toISOString().slice(0, 10);
+
+    const content = `
+        <form id="worker-recap-form" data-worker-id="${workerId}">
+            <div class="recap-filters" style="padding: 0; align-items: flex-end;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Dari Tanggal</label>
+                    <input type="date" name="startDate" value="${firstDayOfMonth}">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Sampai Tanggal</label>
+                    <input type="date" name="endDate" value="${todayStr}">
+                </div>
+                <button type="submit" class="btn btn-primary">Tampilkan</button>
+            </div>
+        </form>
+        <div id="worker-recap-results" style="margin-top: 1.5rem;">
+            <p class="empty-state-small">Pilih rentang tanggal untuk melihat rekap gaji.</p>
+        </div>
+    `;
+
+    createModal('dataDetail', { title: `Rekap Gaji: ${worker.workerName}`, content });
+
+    $('#worker-recap-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        await _generateWorkerRecap(
+            form.dataset.workerId,
+            form.elements.startDate.value,
+            form.elements.endDate.value
+        );
+    });
+}
+
+async function _generateWorkerRecap(workerId, startDateStr, endDateStr) {
+    const container = $('#worker-recap-results');
+    if (!container) return;
+    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+    endDate.setHours(23, 59, 59, 999);
+
+    const q = query(attendanceRecordsCol,
+        where('workerId', '==', workerId),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate),
+        orderBy('date', 'desc')
+    );
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+        container.innerHTML = `<p class="empty-state">Tidak ada catatan absensi untuk pekerja ini pada periode yang dipilih.</p>`;
+        return;
+    }
+
+    const records = snap.docs.map(doc => doc.data());
+    
+    const totalPay = records.reduce((sum, rec) => sum + (rec.totalPay || 0), 0);
+    const totalDays = records.length;
+    const totalHours = records.reduce((sum, rec) => sum + (rec.workHours || 8), 0); // Asumsi 8 jam utk manual
+
+    const summaryHTML = `
+        <div class="worker-recap-summary card">
+            <div><span class="label">Total Hari Kerja</span><strong>${totalDays} Hari</strong></div>
+            <div><span class="label">Total Jam Kerja</span><strong>${totalHours.toFixed(1)} Jam</strong></div>
+            <div class="total-gaji"><span class="label">Total Gaji</span><strong>${fmtIDR(totalPay)}</strong></div>
+        </div>
+    `;
+
+    const listHTML = records.map(rec => {
+        const date = rec.date.toDate().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+        const project = appState.projects.find(p => p.id === rec.projectId);
+        let statusText = rec.isPaid ? 'Lunas' : 'Belum Dibayar';
+
+        return `
+            <div class="detail-list-item">
+                <div class="item-main">
+                    <span class="item-date">${date}</span>
+                    <span class="item-project">${project?.projectName || ''}</span>
+                </div>
+                <div class="item-secondary">
+                    <span class="item-status ${rec.isPaid ? 'paid' : 'unpaid'}">${statusText}</span>
+                    <strong class="item-amount">${fmtIDR(rec.totalPay || 0)}</strong>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = summaryHTML + `<div class="detail-list-container">${listHTML}</div>`;
+}
+
 async function handleManageUsers() {
     toast('syncing', 'Memuat data pengguna...');
     try {

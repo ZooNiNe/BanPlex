@@ -213,6 +213,67 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .card-list-item { padding: .65rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: .5rem; }
 .card-list-item-content { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; cursor: pointer; gap: 1rem; }
 .card-list-item-details { flex: 1; min-width: 0; }
+.card-list-item-details .category-badge {
+  margin-top: 0.5rem;
+  display: inline-block;
+  }
+  .sub-nav,
+  .category-sub-nav {
+      display: flex;
+      gap: 0.5rem; /* Memberi jarak antar pil */
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.5rem; /* Sedikit ruang di bawah untuk bayangan */
+  
+      /* Aturan untuk membuat tab bisa digeser tetap dipertahankan */
+      overflow-x: auto; 
+      flex-wrap: nowrap; 
+      -webkit-overflow-scrolling: touch; 
+      scrollbar-width: none; 
+      -ms-overflow-style: none;
+  }
+  
+  .sub-nav::-webkit-scrollbar,
+  .category-sub-nav::-webkit-scrollbar {
+      display: none;
+  }
+  
+  /* 2. Ubah setiap item menjadi "pil" dengan background sendiri */
+  .sub-nav-item {
+      flex-shrink: 0; 
+      text-align: center;
+      padding: .3rem 1rem; 
+      border: 1px solid var(--line); /* Beri garis tepi tipis */
+      background-color: var(--surface-muted); /* Latar belakang default untuk pil */
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-dim);
+      border-radius: 999px; /* Membuat bentuk pil yang sempurna */
+      transition: all .2s ease-in-out;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+  }
+  
+  .sub-nav-item .material-symbols-outlined {
+      font-size: 18px;
+  }
+  
+  /* 3. Atur hover state */
+  .sub-nav-item:hover {
+      border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+      color: var(--primary);
+  }
+  
+  /* 4. Atur style untuk tab yang aktif */
+  .sub-nav-item.active {
+      background-color: var(--primary); /* Warna latar utama saat aktif */
+      color: #fff; /* Teks menjadi putih */
+      border-color: var(--primary);
+      box-shadow: var(--shadow-md);
+  }
 .card-list-item-title { font-size: 0.85rem; font-weight: 600; margin: 0; line-height: 1.4; word-break: break-word; }
 .card-list-item-subtitle { font-size: 0.7rem; color: var(--text-dim); margin-top: .1rem; }
 .card-list-item-amount-wrapper { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; text-align: right; }
@@ -654,4 +715,120 @@ body.selection-active .selection-bar.show {
 
 .summary-grid strong.negative {
   color: var(--danger);
+}
+
+/* === [BARU] Style untuk Jurnal Absensi === */
+
+.jurnal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.jurnal-item {
+  padding: var(--spacing);
+}
+
+.jurnal-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.jurnal-item-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.jurnal-item-actions {
+  text-align: right;
+}
+
+.jurnal-item-actions .btn-sm {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.8rem;
+}
+
+/* Style untuk Rekap Gaji Perorangan di Modal */
+.worker-recap-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: var(--spacing);
+  margin-bottom: 1.5rem;
+  background-color: var(--surface-muted);
+}
+.worker-recap-summary > div {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+.worker-recap-summary .label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+}
+.worker-recap-summary strong {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.worker-recap-summary .total-gaji {
+  grid-column: 1 / -1; /* Total gaji mengambil lebar penuh */
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+.worker-recap-summary .total-gaji strong {
+  color: var(--primary);
+  font-size: 1.4rem;
+}
+
+/* Style untuk daftar detail di rekap perorangan */
+.detail-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.detail-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: var(--surface-muted);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+.detail-list-item .item-main {
+  display: flex;
+  flex-direction: column;
+}
+.detail-list-item .item-date {
+  font-weight: 600;
+}
+.detail-list-item .item-project {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.detail-list-item .item-secondary {
+  text-align: right;
+}
+.detail-list-item .item-status {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.detail-list-item .item-status.paid { color: var(--success); }
+.detail-list-item .item-status.unpaid { color: var(--warn); }
+
+.detail-list-item .item-amount {
+  font-weight: 700;
 }
