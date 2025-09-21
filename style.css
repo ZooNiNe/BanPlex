@@ -385,14 +385,59 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .ptr .ptr-spinner { width: 22px; height: 22px; border: 3px solid rgba(0,0,0,.2); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; opacity: 0; }
 .ptr.ptr-ready .ptr-spinner { opacity: 1; }
 
-/* Update Notification */
-#update-notification { position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; justify-content: center; align-items: center; z-index: 1500; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
-#update-notification.show { opacity: 1; visibility: visible; }
-.update-card { background-color: var(--panel); color: var(--text); padding: 1.5rem; border-radius: var(--radius-lg); text-align: center; box-shadow: var(--shadow-lg); max-width: 90%; width: 320px; margin: 1rem; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-#update-notification.show .update-card { transform: scale(1); }
-.update-card h4 { margin-top: 0; margin-bottom: 0.5rem; font-size: 1.1rem; }
-.update-card p { margin-bottom: 1.25rem; font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; }
-.update-card .btn { width: 100%; }
+#update-notification {
+  position: fixed;
+  bottom: -180px; /* Mulai dari luar layar bawah */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2100; /* Pastikan di atas semua elemen lain */
+  width: auto;
+  max-width: calc(100% - 2rem);
+  transition: bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  visibility: visible;
+}
+
+#update-notification.show {
+  bottom: 80px; /* Muncul di atas menu navigasi bawah */
+}
+
+.update-card {
+  background-color: #2c3e50; /* Warna gelap agar kontras */
+  color: #ecf0f1;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem; /* Jarak antara teks dan tombol */
+  box-shadow: var(--shadow-lg);
+  text-align: left; /* Teks rata kiri */
+}
+
+.update-card .update-info {
+    flex-grow: 1;
+}
+
+.update-card h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.update-card p {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.update-card .btn {
+  background: var(--primary);
+  color: white;
+  flex-shrink: 0; /* Mencegah tombol mengecil */
+  padding: 0.5rem 0.85rem;
+  font-weight: 500;
+}
 
 /* Filter & Sort Modal */
 .filter-modal-body .form-group:last-child { margin-bottom: 0; }
