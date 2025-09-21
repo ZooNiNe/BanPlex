@@ -1743,10 +1743,10 @@ async function main() {
                     <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
                 </div>
                 
-                <h5 class.="invoice-section-title" style="margin-top:1.5rem;">Lampiran (Opsional)</h5>
+                <h5 class="invoice-section-title" style="margin-top:1.5rem;">Lampiran (Opsional)</h5>
                 <div class="form-group">
                     <label for="attachmentFile">Upload Bukti / Lampiran</label>
-                    <input type="file" name="attachmentFile" accept="image/*" capture="environment">
+                    <input type="file" name="attachmentFile" accept="image/*">
                 </div>
     
                 <div class="form-group">
@@ -1762,7 +1762,7 @@ async function main() {
         </div>
         `;
     }
-
+    
     function _attachPengeluaranFormListeners(type) {
         _initCustomSelects();
         const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
@@ -2548,14 +2548,12 @@ async function handleManageMasterData(type) {
                     <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
                 </div>
     
-                <h5 class="invoice-section-title">Lampiran (Opsional)</h5>
-                <div class="form-group">
-                    <label for="invoiceFile">Upload Bukti Faktur</label>
-                    <input type="file" name="invoiceFile" accept="image/*" capture="environment">
-                </div>
-                <div class="form-group">
-                    <label for="deliveryOrderFile">Upload Surat Jalan</label>
-                    <input type="file" name="deliveryOrderFile" accept="image/*" capture="environment">
+                <h5 class="invoice-section-title">Rincian Barang</h5>
+                <div id="invoice-items-container"></div>
+                 <div class="add-item-action">
+                    <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
+                        <span class="material-symbols-outlined">add_circle</span>
+                    </button>
                 </div>
                 
                 <div class="invoice-total">
@@ -2587,7 +2585,7 @@ async function handleManageMasterData(type) {
         </div>
         `;
     }
-    
+
     function _addInvoiceItemRow() {
         const container = $('#invoice-items-container');
         if (!container) return;
