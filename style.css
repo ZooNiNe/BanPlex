@@ -515,9 +515,6 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
     border-bottom: none;
 }
 
-/*
-   CATATAN: Aturan spesifik untuk #dataDetail-modal .modal-body { padding: initial; } telah dihapus.
-   Sekarang semua modal akan memiliki padding yang konsisten, dan elemen full-width di atas
-   akan menyesuaikan diri dengan benar.
-*/
-
+.hidden-file-input {
+  display: none;
+}

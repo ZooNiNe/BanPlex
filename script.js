@@ -1286,6 +1286,20 @@ async function main() {
         });
     }
 
+    document.body.addEventListener('change', e => {
+        if (e.target.matches('.hidden-file-input')) {
+            const displayId = e.target.dataset.targetDisplay;
+            const displayEl = $(`#${displayId}`);
+            if (displayEl) {
+                if (e.target.files && e.target.files.length > 0) {
+                    displayEl.textContent = e.target.files[0].name;
+                } else {
+                    displayEl.textContent = 'Belum ada file dipilih';
+                }
+            }
+        }
+    }, true);
+
     function _attachPemasukanFormListeners() {
         $('#pemasukan-form')?.addEventListener('submit', handleAddPemasukan);
         _initCustomSelects();
@@ -1745,8 +1759,18 @@ async function main() {
                 
                 <h5 class="invoice-section-title" style="margin-top:1.5rem;">Lampiran (Opsional)</h5>
                 <div class="form-group">
-                    <label for="attachmentFile">Upload Bukti / Lampiran</label>
-                    <input type="file" name="attachmentFile" accept="image/*">
+                    <input type="file" name="attachmentFileCamera" accept="image/*" capture="environment" class="hidden-file-input" data-target-display="attachmentFile-display">
+                    <input type="file" name="attachmentFileGallery" accept="image/*" class="hidden-file-input" data-target-display="attachmentFile-display">
+                    
+                    <div class="upload-buttons">
+                        <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="attachmentFileCamera">
+                            <span class="material-symbols-outlined">photo_camera</span> Buka Kamera
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="attachmentFileGallery">
+                            <span class="material-symbols-outlined">image</span> Pilih dari Galeri
+                        </button>
+                    </div>
+                    <div class="file-name-display" id="attachmentFile-display">Belum ada file dipilih</div>
                 </div>
     
                 <div class="form-group">
@@ -1762,7 +1786,7 @@ async function main() {
         </div>
         `;
     }
-    
+
     function _attachPengeluaranFormListeners(type) {
         _initCustomSelects();
         const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
@@ -1834,8 +1858,8 @@ async function main() {
                 };
     
                 // Proses upload sebelum menyimpan ke Firestore
-                const invoiceFile = form.elements.invoiceFile?.files[0];
-                const deliveryOrderFile = form.elements.deliveryOrderFile?.files[0];
+                const invoiceFile = form.elements.invoiceFileCamera?.files[0] || form.elements.invoiceFileGallery?.files[0];
+                const deliveryOrderFile = form.elements.deliveryOrderFileCamera?.files[0] || form.elements.deliveryOrderFileGallery?.files[0];
                 if (invoiceFile) {
                     expenseData.invoiceUrl = await _uploadFileToCloudinary(invoiceFile) || '';
                 }
@@ -1855,7 +1879,7 @@ async function main() {
                };
 
                // Proses upload lampiran generik
-               const attachmentFile = form.elements.attachmentFile?.files[0];
+               const attachmentFile = form.elements.attachmentFileCamera?.files[0] || form.elements.attachmentFileGallery?.files[0];
                if (attachmentFile) {
                    expenseData.attachmentUrl = await _uploadFileToCloudinary(attachmentFile) || '';
                }
@@ -2528,63 +2552,75 @@ async function handleManageMasterData(type) {
         return `INV/${year}${month}${day}/${randomPart}`;
     }
 
-    function _getFormFakturMaterialHTML() {
-        const supplierOptions = appState.suppliers
-            .filter(s => s.category === 'Material')
-            .map(s => ({ value: s.id, text: s.supplierName }));
-        const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
-    
-        return `
-        <div class="card card-pad">
-            <form id="material-invoice-form" data-type="material">
-                ${createMasterDataSelect('project-id', 'Proyek', projectOptions, '', 'projects')}
-                <div class="form-group">
-                    <label>No. Faktur</label>
-                    <input type="text" id="pengeluaran-deskripsi" name="pengeluaran-deskripsi" readonly class="readonly-input">
+function _getFormFakturMaterialHTML() {
+    const supplierOptions = appState.suppliers
+        .filter(s => s.category === 'Material')
+        .map(s => ({ value: s.id, text: s.supplierName }));
+    const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
+
+    return `
+    <div class="card card-pad">
+        <form id="material-invoice-form" data-type="material">
+            ${createMasterDataSelect('project-id', 'Proyek', projectOptions, '', 'projects')}
+            <div class="form-group">
+                <label>No. Faktur</label>
+                <input type="text" id="pengeluaran-deskripsi" name="pengeluaran-deskripsi" readonly class="readonly-input">
+            </div>
+            ${createMasterDataSelect('supplier-id', 'Supplier', supplierOptions, '', 'suppliers')}
+             <div class="form-group">
+                <label>Tanggal Faktur</label>
+                <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
+            </div>
+
+            <h5 class="invoice-section-title">Rincian Barang</h5>
+            <div id="invoice-items-container"></div>
+             <div class="add-item-action">
+                <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
+                    <span class="material-symbols-outlined">add_circle</span>
+                </button>
+            </div>
+            
+            <div class="invoice-total">
+                <span>Total Faktur:</span>
+                <strong id="invoice-total-amount">Rp 0</strong>
+            </div>
+
+            <h5 class="invoice-section-title">Lampiran (Opsional)</h5>
+            <div class="form-group">
+                <label>Upload Bukti Faktur</label>
+                <input type="file" name="invoiceFileCamera" accept="image/*" capture="environment" class="hidden-file-input" data-target-display="invoiceFile-display">
+                <input type="file" name="invoiceFileGallery" accept="image/*" class="hidden-file-input" data-target-display="invoiceFile-display">
+                <div class="upload-buttons">
+                    <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="invoiceFileCamera"><span class="material-symbols-outlined">photo_camera</span> Kamera</button>
+                    <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="invoiceFileGallery"><span class="material-symbols-outlined">image</span> Galeri</button>
                 </div>
-                ${createMasterDataSelect('supplier-id', 'Supplier', supplierOptions, '', 'suppliers')}
-                 <div class="form-group">
-                    <label>Tanggal Faktur</label>
-                    <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
+                <div class="file-name-display" id="invoiceFile-display">Belum ada file dipilih</div>
+            </div>
+            <div class="form-group">
+                <label>Upload Surat Jalan</label>
+                <input type="file" name="deliveryOrderFileCamera" accept="image/*" capture="environment" class="hidden-file-input" data-target-display="deliveryOrderFile-display">
+                <input type="file" name="deliveryOrderFileGallery" accept="image/*" class="hidden-file-input" data-target-display="deliveryOrderFile-display">
+                <div class="upload-buttons">
+                    <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="deliveryOrderFileCamera"><span class="material-symbols-outlined">photo_camera</span> Kamera</button>
+                    <button type="button" class="btn btn-secondary" data-action="trigger-file-input" data-target="deliveryOrderFileGallery"><span class="material-symbols-outlined">image</span> Galeri</button>
                 </div>
-    
-                <h5 class="invoice-section-title">Rincian Barang</h5>
-                <div id="invoice-items-container"></div>
-                 <div class="add-item-action">
-                    <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
-                        <span class="material-symbols-outlined">add_circle</span>
-                    </button>
+                <div class="file-name-display" id="deliveryOrderFile-display">Belum ada file dipilih</div>
+            </div>
+
+            <div class="form-group">
+                <label>Status Pembayaran</label>
+                <div class="sort-direction">
+                    <button type="button" class="btn-status-payment active" data-status="unpaid">Jadikan Tagihan</button>
+                    <button type="button" class="btn-status-payment" data-status="paid">Sudah Lunas</button>
                 </div>
-                
-                <div class="invoice-total">
-                    <span>Total Faktur:</span>
-                    <strong id="invoice-total-amount">Rp 0</strong>
-                </div>
-    
-                <h5 class="invoice-section-title">Lampiran (Opsional)</h5>
-                <div class="form-group">
-                    <label for="invoiceFile">Upload Bukti Faktur</label>
-                    <input type="file" name="invoiceFile" accept="image/*">
-                </div>
-                <div class="form-group">
-                    <label for="deliveryOrderFile">Upload Surat Jalan</label>
-                    <input type="file" name="deliveryOrderFile" accept="image/*">
-                </div>
-    
-                <div class="form-group">
-                    <label>Status Pembayaran</label>
-                    <div class="sort-direction">
-                        <button type="button" class="btn-status-payment active" data-status="unpaid">Jadikan Tagihan</button>
-                        <button type="button" class="btn-status-payment" data-status="paid">Sudah Lunas</button>
-                    </div>
-                    <input type="hidden" name="status" value="unpaid">
-                </div>
-    
-                <button type="submit" class="btn btn-primary">Simpan Faktur</button>
-            </form>
-        </div>
-        `;
-    }
+                <input type="hidden" name="status" value="unpaid">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Simpan Faktur</button>
+        </form>
+    </div>
+    `;
+}
 
     function _addInvoiceItemRow() {
         const container = $('#invoice-items-container');
@@ -2865,6 +2901,12 @@ async function handleManageMasterData(type) {
                     } else {
                         toast('error', 'Rincian item tidak ditemukan.');
                     }
+                    break;
+                }
+                case 'trigger-file-input': {
+                    const targetName = actionTarget.dataset.target;
+                    const input = $(`input[name="${targetName}"]`);
+                    if (input) input.click();
                     break;
                 }
                 
