@@ -1742,6 +1742,13 @@ async function main() {
                     <label>Tanggal</label>
                     <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
                 </div>
+                
+                <h5 class.="invoice-section-title" style="margin-top:1.5rem;">Lampiran (Opsional)</h5>
+                <div class="form-group">
+                    <label for="attachmentFile">Upload Bukti / Lampiran</label>
+                    <input type="file" name="attachmentFile" accept="image/*" capture="environment">
+                </div>
+    
                 <div class="form-group">
                     <label>Status Pembayaran</label>
                     <div class="sort-direction">
@@ -1754,8 +1761,8 @@ async function main() {
             </form>
         </div>
         `;
-    }     
-    
+    }
+
     function _attachPengeluaranFormListeners(type) {
         _initCustomSelects();
         const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
@@ -1837,15 +1844,22 @@ async function main() {
                 }
     
             } else {
-                 expenseData = {
-                    amount: parseFormattedNumber(form.elements['pengeluaran-jumlah'].value),
-                    description: form.elements['pengeluaran-deskripsi'].value.trim(),
-                    supplierId: form.elements['expense-supplier'].value,
-                    categoryId: form.elements['expense-category']?.value || '',
-                    date: new Date(form.elements['pengeluaran-tanggal'].value),
-                    type: type, projectId
-                };
-            }
+                expenseData = {
+                   amount: parseFormattedNumber(form.elements['pengeluaran-jumlah'].value),
+                   description: form.elements['pengeluaran-deskripsi'].value.trim(),
+                   supplierId: form.elements['expense-supplier'].value,
+                   categoryId: form.elements['expense-category']?.value || '',
+                   date: new Date(form.elements['pengeluaran-tanggal'].value),
+                   type: type, projectId,
+                   attachmentUrl: '' // Siapkan properti URL
+               };
+
+               // Proses upload lampiran generik
+               const attachmentFile = form.elements.attachmentFile?.files[0];
+               if (attachmentFile) {
+                   expenseData.attachmentUrl = await _uploadFileToCloudinary(attachmentFile) || '';
+               }
+           }
             
             if (!expenseData.amount || !expenseData.description) {
                 toast('error', 'Harap isi deskripsi dan jumlah.'); return;
@@ -1948,7 +1962,7 @@ async function main() {
         }
     }
 
-    
+
     // =======================================================
     //         FUNGSI CRUD MASTER DATA
     // =======================================================
@@ -2534,12 +2548,14 @@ async function handleManageMasterData(type) {
                     <input type="date" id="pengeluaran-tanggal" name="pengeluaran-tanggal" value="${new Date().toISOString().slice(0,10)}" required>
                 </div>
     
-                <h5 class="invoice-section-title">Rincian Barang</h5>
-                <div id="invoice-items-container"></div>
-                 <div class="add-item-action">
-                    <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
-                        <span class="material-symbols-outlined">add_circle</span>
-                    </button>
+                <h5 class="invoice-section-title">Lampiran (Opsional)</h5>
+                <div class="form-group">
+                    <label for="invoiceFile">Upload Bukti Faktur</label>
+                    <input type="file" name="invoiceFile" accept="image/*" capture="environment">
+                </div>
+                <div class="form-group">
+                    <label for="deliveryOrderFile">Upload Surat Jalan</label>
+                    <input type="file" name="deliveryOrderFile" accept="image/*" capture="environment">
                 </div>
                 
                 <div class="invoice-total">
@@ -3118,15 +3134,53 @@ async function handleManageMasterData(type) {
             }
         }
     
-        const attachmentsHTML = (expenseData.type === 'material') ? `
+    let attachmentsHTML = '';
+    
+    // 1. Logika untuk Tipe Material (tetap sama)
+    if (expenseData.type === 'material') {
+        const buttons = [];
+        if (!isViewer()) {
+            if (!expenseData.invoiceUrl) {
+                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="invoiceUrl">Upload Faktur</button>`);
+            }
+            if (!expenseData.deliveryOrderUrl) {
+                buttons.push(`<button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="deliveryOrderUrl">Upload Surat Jalan</button>`);
+            }
+        }
+        let uploadButtonsHTML = buttons.length > 0 
+            ? `<div class="rekap-actions" style="grid-template-columns: repeat(${buttons.length}, 1fr); margin-top: 1rem;">${buttons.join('')}</div>`
+            : '';
+
+        attachmentsHTML = `
             <h5 class="detail-section-title">Lampiran</h5>
             <div class="attachment-gallery">
                 ${createAttachmentItem(expenseData.invoiceUrl, 'Bukti Faktur', 'invoiceUrl')}
                 ${createAttachmentItem(expenseData.deliveryOrderUrl, 'Surat Jalan', 'deliveryOrderUrl')}
             </div>
             ${uploadButtonsHTML}
-        ` : '';
-        
+        `;
+    
+    // 2. Logika BARU untuk Tipe Lainnya (Operasional, dll)
+    } else if (expenseData.attachmentUrl) {
+        attachmentsHTML = `
+            <h5 class="detail-section-title">Lampiran</h5>
+            <div class="attachment-gallery">
+                ${createAttachmentItem(expenseData.attachmentUrl, 'Lampiran', 'attachmentUrl')}
+            </div>
+        `;
+    
+    // 3. Logika BARU jika lampiran belum ada untuk tipe non-material
+    } else if (!isViewer()) {
+         attachmentsHTML = `
+            <h5 class="detail-section-title">Lampiran</h5>
+            <div class="rekap-actions" style="grid-template-columns: 1fr; margin-top: 1rem;">
+                <button class="btn btn-secondary" data-action="upload-attachment" data-id="${expenseData.id}" data-field="attachmentUrl">
+                    Upload Lampiran
+                </button>
+            </div>
+        `;
+    }
+            
         return `
             <div class="payment-summary">
                 <div><span>Total Pengeluaran:</span><strong>${fmtIDR(expenseData.amount)}</strong></div>
