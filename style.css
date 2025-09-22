@@ -53,7 +53,9 @@ body {
 .content-wrapper::before { top: -80px; right: -60px; width: 260px; height: 260px; background: radial-gradient(closest-side, rgba(14,165,233,.6), transparent 70%); }
 .content-wrapper::after { bottom: -100px; left: -80px; width: 300px; height: 300px; background: radial-gradient(closest-side, rgba(16,185,129,.5), transparent 70%); }
 
-.page-container { padding: var(--spacing); position: relative; overscroll-behavior-y: contain; }
+.page-container { padding: var(--spacing); position: relative; overscroll-behavior-y: contain;     overflow-y: auto; /* <-- TAMBAHKAN BARIS INI */
+  -webkit-overflow-scrolling: touch; /* Opsional: Membuat scroll lebih mulus di iOS */
+}
 
 .toolbar { display: flex; gap: .5rem; align-items: center; margin: .75rem var(--spacing) .5rem var(--spacing); position: relative; z-index: 1; padding: 0 .25rem; margin-bottom: .75rem;}
 .toolbar .search { flex: 1; display: flex; align-items: center; gap: .45rem; background: var(--surface-muted); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .5rem .75rem; min-height: 40px; height: 40px; box-shadow: var(--shadow-sm); transition: box-shadow .2s ease;}
@@ -831,4 +833,588 @@ body.selection-active .selection-bar.show {
 
 .detail-list-item .item-amount {
   font-weight: 700;
+}
+
+/* =======================================================
+ * [BARU] Style untuk Modal Jurnal Harian
+ * ======================================================= */
+
+.jurnal-detail-header {
+  margin-bottom: 1.5rem;
+}
+
+#jurnal-detail-summary {
+  margin-bottom: 1rem;
+}
+
+#jurnal-detail-summary .summary-title {
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+
+#jurnal-detail-summary .summary-total {
+  text-align: center;
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.jurnal-pekerja-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* Jarak antar kartu pekerja */
+}
+
+.jurnal-pekerja-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  gap: 1rem;
+}
+
+.jurnal-pekerja-info {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.jurnal-pekerja-info strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jurnal-pekerja-info span {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.jurnal-pekerja-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.jurnal-pekerja-status strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.jurnal-pekerja-status .status-badge {
+  margin-top: 0.25rem;
+}
+
+/* Warna-warna untuk status badge */
+.status-badge.status-hadir {
+  color: var(--success);
+  background-color: color-mix(in srgb, var(--success) 15%, transparent);
+}
+.status-badge.status-setengah {
+  color: var(--warn);
+  background-color: color-mix(in srgb, var(--warn) 15%, transparent);
+}
+.status-badge.status-absen {
+  color: var(--text-dim);
+  background-color: var(--surface-muted);
+}
+.status-badge.status-absen {
+  color: var(--text-dim);
+  background-color: var(--surface-muted);
+}
+
+/* Style untuk Tombol Pilihan Status di Modal */
+.button-group-selector {
+  display: flex;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.button-group-selector input[type="radio"] {
+  display: none; /* Sembunyikan radio button asli */
+}
+.button-group-selector label {
+  flex: 1;
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  cursor: pointer;
+  background-color: var(--bg-soft);
+  color: var(--text-muted);
+  transition: all 0.2s ease-in-out;
+  font-weight: 500;
+}
+.button-group-selector input[type="radio"]:checked + label {
+  background-color: var(--primary);
+  color: white;
+  font-weight: 600;
+}
+/* Style untuk info proyek di modal rincian jurnal */
+.jurnal-pekerja-project {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
+}
+.jurnal-pekerja-project span {
+  color: var(--text-muted);
+}
+
+/* Styling untuk Kwitansi */
+.kwitansi-container {
+  border: 1px solid var(--border-color);
+  padding: 1.5rem;
+  font-family: 'Courier New', Courier, monospace;
+  color: #333;
+  background-color: #fff;
+}
+
+.kwitansi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px double #333;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.kwitansi-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: 2px;
+}
+
+.kwitansi-nomor {
+  font-size: 0.9rem;
+}
+
+.kwitansi-body dl {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 0.75rem;
+  font-size: 1rem;
+}
+
+.kwitansi-body dt {
+  font-weight: bold;
+}
+
+.kwitansi-body dd {
+  margin: 0;
+}
+
+.kwitansi-body .terbilang {
+  font-style: italic;
+  font-weight: bold;
+  background-color: #f0f0f0;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.kwitansi-footer {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column; /* <-- Susun secara vertikal */
+  align-items: flex-start; /* <-- Rata kiri */
+  gap: 1.5rem; /* <-- Beri jarak antar elemen */
+}
+
+.kwitansi-jumlah-box {
+  border: 2px solid #333;
+  padding: 1rem 1.5rem;
+  font-size: 1.25rem;
+  font-weight: bold;
+  background-color: #f0f0f0;
+}
+
+.kwitansi-ttd {
+  width: 100%; /* <-- Pastikan bagian TTD mengambil lebar penuh */
+  text-align: right; /* <-- Pindahkan TTD ke kanan */
+}
+
+.kwitansi-ttd .penerima {
+  margin-bottom: 4rem; /* Spasi untuk tanda tangan */
+}
+
+.kwitansi-ttd .nama-penerima {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+/* [GANTI SELURUH BLOK CSS SIMULASI INI] */
+.simulasi-section {
+  margin-bottom: 0.5rem;
+  padding: 0,5rem;
+  overflow: hidden;
+}
+
+.simulasi-section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%; padding: 0.8rem 1.5rem; background: transparent;
+  border: none; color: var(--text); cursor: pointer; text-align: left;
+}
+.simulasi-section-header .header-info {
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.simulasi-section-header .header-title {
+  font-size: 0.9rem; font-weight: 600;
+}
+.simulasi-section-header .header-total {
+  font-size: 0.9rem; color: var(--text-muted); font-weight: 500;
+}
+.simulasi-section-header .header-icon {
+  font-size: 0.9rem; transition: transform 0.3s ease;
+}
+.simulasi-section.open .simulasi-section-header {
+  border-bottom: 1px solid var(--border-color);
+}
+.simulasi-section.open .simulasi-section-header .header-icon {
+  transform: rotate(180deg);
+}
+.simulasi-section-content {
+  max-height: 0; overflow: hidden; transition: max-height 0.4s ease-out;
+  padding: 0 1.5rem;
+}
+.simulasi-section.open .simulasi-section-content {
+  max-height: 1000px; padding: 1rem 1.5rem; transition: max-height 0.5s ease-in;
+}
+.simulasi-item {
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  display: grid;
+  gap: 0 1rem;
+  align-items: center;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  transition: all 0.2s ease-in-out;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+      "info amount"
+      "info button";
+}
+
+.simulasi-item:hover {
+    border-color: var(--primary-light);
+}
+
+.simulasi-item.selected {
+    border-color: var(--primary);
+    background-color: var(--primary-bg);
+}
+
+.simulasi-item .check-icon {
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    font-size: 1.5rem;
+    color: var(--primary);
+    background-color: var(--bg-card);
+    border-radius: 50%;
+    transform: scale(0);
+    transition: transform 0.2s ease;
+}
+
+.simulasi-item.selected .check-icon {
+    transform: scale(1);
+}
+
+.simulasi-info { grid-area: info; }
+.simulasi-title { font-weight: bold; }
+.simulasi-desc { font-size: 0.85rem; color: var(--text-muted); }
+.simulasi-amount {
+    grid-area: amount;
+    font-weight: bold; font-size: 1.1rem; text-align: right;
+}
+.cicilan-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.partial-payment-btn {
+    grid-area: button;
+    justify-self: end;
+    display: none; /* Sembunyikan default */
+}
+
+.simulasi-item.selected[data-partial-allowed="true"] .partial-payment-btn {
+    display: block;
+}
+.simulasi-footer {
+  position: sticky; bottom: 65px; z-index: 10;
+}
+/* =======================================================
+ * [REVISI FINAL] Style Halaman Simulasi Pembayaran
+ * ======================================================= */
+
+/* [FIX] Memberi jarak bawah agar tidak menempel dengan kartu di bawahnya */
+.simulasi-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem; /* [FIX] Jarak vertikal di dalam kartu diperkecil */
+  margin-bottom: 1rem; /* [FIX] Jarak ke kartu section di bawah */
+}
+
+/* [FIX] Perkecil tinggi tombol PDF */
+.simulasi-summary .btn {
+  padding: 0.3rem 1rem; /* Padding vertikal dikurangi */
+  min-height: 20px; /* Menetapkan tinggi minimal */
+}
+
+.simulasi-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding-top: 0.1rem;
+  margin-top: 0.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.simulasi-totals > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.simulasi-totals .label {
+  font-size: 0.75rem;
+  font-weight: 250;
+  color: var(--text-dim);
+}
+
+.simulasi-totals strong {
+  font-size: 1rem; /* [FIX] Ukuran nominal total diperkecil */
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.simulasi-totals strong.negative {
+  color: var(--danger);
+}
+
+/* Accordion untuk setiap bagian tagihan */
+.simulasi-section {
+  margin-bottom: 0.75rem;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.simulasi-section-header {
+  padding: 0.75rem 1rem;
+}
+
+.simulasi-section-header .header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.simulasi-section-header .header-title {
+  font-size: 0.95rem; /* [FIX] Ukuran header section diperkecil */
+  font-weight: 600;
+}
+
+.simulasi-section-header .header-total {
+  font-size: 0.75rem;
+}
+
+.simulasi-section-content {
+  padding: 0 1rem;
+}
+
+.simulasi-section.open .simulasi-section-content {
+  padding: 0.5rem 1rem 1rem 1rem;
+}
+
+/* Kartu item tagihan (tidak ada perubahan di sini) */
+.simulasi-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid transparent;
+  cursor: pointer;
+  background-color: var(--panel);
+  border-radius: var(--radius);
+  transition: all 0.2s ease-in-out;
+}
+.simulasi-item:active {
+  transform: scale(0.98);
+}
+.simulasi-item.selected {
+  border-left-color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.simulasi-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.simulasi-amount {
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: right;
+}
+ .cicilan-label {
+     display: block;
+     font-size: 0.75rem;
+     font-weight: 500;
+     color: var(--text-dim);
+ }
+ 
+ /* [TIDAK DIPERLUKAN LAGI] Tombol-tombol ini sekarang ada di dalam modal */
+ .simulasi-item .check-icon,
+ .simulasi-item .partial-payment-btn {
+     display: none;
+ }
+ 
+ /* [BARU] Styling untuk modal aksi item simulasi */
+ .simulasi-actions-modal-header {
+     padding-bottom: 1rem;
+     margin-bottom: 1rem;
+     border-bottom: 1px solid var(--line);
+ }
+ .simulasi-actions-modal-header h5 {
+     font-size: 1.1rem;
+     margin: 0 0 0.25rem 0;
+ }
+ .simulasi-actions-modal-header p {
+     font-size: 0.85rem;
+     color: var(--text-dim);
+     margin: 0;
+     line-height: 1.5;
+ }
+ .simulasi-actions-modal-footer {
+     display: flex;
+     flex-direction: column;
+     gap: 0.75rem;
+     margin-top: 1.5rem;
+ }
+/* [GANTI BLOK CSS INI] Style untuk Sub-Seksi di Halaman Simulasi */
+.simulasi-subsection {
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.simulasi-subsection:last-child {
+  margin-bottom: 0;
+}
+
+/* [BARU] Header sub-seksi sekarang adalah button */
+.simulasi-subsection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: var(--surface-muted);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.simulasi-subsection-header .subsection-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.simulasi-subsection-header .subsection-info span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.simulasi-subsection-header .subsection-info small {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.simulasi-subsection-header .sub-header-icon {
+  transition: transform 0.3s ease;
+}
+
+/* [BARU] Logika untuk animasi buka-tutup */
+.simulasi-subsection-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+  padding: 0 0.5rem;
+}
+
+.simulasi-subsection.open .simulasi-subsection-header .sub-header-icon {
+  transform: rotate(180deg);
+}
+.simulasi-subsection.open .simulasi-subsection-content {
+  max-height: 1000px; /* Nilai besar untuk menampung item */
+  transition: max-height 0.4s ease-in;
+  padding: 0.75rem 0.5rem 0.25rem 0.5rem;
+}
+ /* CSS untuk tampilan daftar tagihan yang ringkas */
+.dense-list-container {
+  padding: 0 .5rem 2rem .5rem;
+}
+.dense-list-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .75rem;
+  border-bottom: 1px solid var(--line);
+  background-color: var(--panel);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.5rem;
+  box-shadow: var(--shadow-sm);
+}
+.item-main-content {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  cursor: pointer;
+  min-width: 0;
+}
+.item-title {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-subtitle {
+  font-size: .75rem;
+  color: var(--text-dim);
+}
+.item-details {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-top: .25rem;
+}
+.item-amount {
+  font-size: .85rem;
+  font-weight: 600;
+}
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  flex-shrink: 0;
+}
+.item-actions .btn-sm {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.6rem;
+}
+.item-actions .btn-sm .material-symbols-outlined {
+  font-size: 16px;
 }

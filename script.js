@@ -1,4 +1,4 @@
-﻿﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
+﻿﻿/* global Chart, html2canvas, jspdf, Dexie */
 // @ts-check
 
 // =======================================================
@@ -42,6 +42,7 @@ async function main() {
         { id: 'stok', icon: 'inventory_2', label: 'Stok', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'tagihan', icon: 'receipt_long', label: 'Tagihan', roles: ['Owner', 'Editor', 'Viewer'] },
         { id: 'laporan', icon: 'monitoring', label: 'Laporan', roles: ['Owner', 'Viewer'] },
+        { id: 'simulasi', icon: 'payments', label: 'Simulasi Bayar', roles: ['Owner'] },
         { id: 'pengaturan', icon: 'settings', label: 'Pengaturan', roles: ['Owner', 'Editor', 'Viewer'] },
     ];
     
@@ -131,6 +132,7 @@ async function main() {
     const expensesCol = collection(db, 'teams', TEAM_ID, 'expenses');
     const billsCol = collection(db, 'teams', TEAM_ID, 'bills');
     const logsCol = collection(db, 'teams', TEAM_ID, 'logs');
+    
 
     let pendingUsersUnsub = null;
     let roleUnsub = null;
@@ -820,11 +822,12 @@ async function main() {
         const container = $('.page-container');
         const pageRenderers = {
             'dashboard': renderDashboardPage,
+            'simulasi': renderSimulasiBayarPage,
             'pengaturan': renderPengaturanPage,
             'pemasukan': renderPemasukanPage,
             'pengeluaran': renderPengeluaranPage,
             'tagihan': renderTagihanPage,
-            'stok': () => renderGenericTabPage('stok', 'Manajemen Stok', [{id:'daftar', label:'Daftar Stok'}, {id:'riwayat', label:'Riwayat'}]),
+            'stok': renderStokPage,
             'laporan': renderLaporanPage,
             'absensi': renderAbsensiPage,
             'jurnal': renderJurnalPage,
@@ -1022,6 +1025,401 @@ async function main() {
 
         container.innerHTML = balanceCardsHTML + quickActionsHTML + projectBudgetHTML + dailyRecapHTML;
     }
+
+// GANTI SELURUH FUNGSI INI di script.js
+async function renderSimulasiBayarPage() {
+    const container = $('.page-container');
+    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+    await Promise.all([
+        fetchAndCacheData('bills', billsCol), fetchAndCacheData('fundingSources', fundingSourcesCol),
+        fetchAndCacheData('workers', workersCol, 'workerName'), fetchAndCacheData('suppliers', suppliersCol, 'supplierName'),
+        fetchAndCacheData('expenses', expensesCol), fetchAndCacheData('fundingCreditors', fundingCreditorsCol, 'creditorName')
+    ]);
+
+    const unpaidBills = appState.bills.filter(b => b.status === 'unpaid');
+    const unpaidLoans = appState.fundingSources.filter(f => f.status === 'unpaid');
+    const materialBills = unpaidBills.filter(b => ['material', 'operasional', 'lainnya'].includes(b.type));
+    const salaryBills = unpaidBills.filter(b => b.type === 'gaji');
+
+    let selectedPayments = new Map();
+
+    // [HTML MINIMALIS BARU] Kartu disederhanakan, deskripsi disimpan di data-* untuk modal
+    const createPaymentCard = (item, type) => {
+        let title, description, remainingAmount, id, isPartialAllowed = false;
+        
+        if (type === 'gaji' || type === 'material') {
+            id = `bill-${item.id}`;
+            const expense = appState.expenses.find(e => e.id === item.expenseId);
+            title = (type === 'gaji') ? appState.workers.find(w => w.id === item.workerId)?.workerName : appState.suppliers.find(s => s.id === expense?.supplierId)?.supplierName;
+            description = item.description;
+            remainingAmount = item.amount - (item.paidAmount || 0);
+            isPartialAllowed = true;
+        } else {
+            id = `loan-${item.id}`;
+            title = appState.fundingCreditors.find(c => c.id === item.creditorId)?.creditorName;
+            description = "Cicilan Pinjaman";
+            remainingAmount = (item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0);
+            isPartialAllowed = true;
+        }
+
+        return `
+            <div class="card simulasi-item" 
+                 data-id="${id}" 
+                 data-full-amount="${remainingAmount}" 
+                 data-partial-allowed="${isPartialAllowed}" 
+                 data-title="${title || 'N/A'}" 
+                 data-description="${description}">
+                <div class="simulasi-info">
+                    <div class="simulasi-title">${title || 'N/A'}</div>
+                </div>
+                <div class="simulasi-amount">${fmtIDR(remainingAmount)}</div>
+            </div>
+        `;
+    };
+
+    const createAccordionSection = (title, items, type) => {
+        if (items.length === 0) return '';
+        const totalAmount = items.reduce((sum, item) => {
+            if (type === 'pinjaman') return sum + ((item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0));
+            return sum + (item.amount - (item.paidAmount || 0));
+        }, 0);
+    
+        const groupedItems = new Map();
+        if (type === 'material' || type === 'pinjaman') {
+            items.forEach(item => {
+                let keyId, groupName;
+                if (type === 'material') {
+                    const expense = appState.expenses.find(e => e.id === item.expenseId);
+                    const supplier = appState.suppliers.find(s => s.id === expense?.supplierId);
+                    keyId = supplier?.id || 'lainnya';
+                    groupName = supplier?.supplierName || 'Lainnya';
+                } else { // pinjaman
+                    const creditor = appState.fundingCreditors.find(c => c.id === item.creditorId);
+                    keyId = creditor?.id || 'lainnya';
+                    groupName = creditor?.creditorName || 'Lainnya';
+                }
+                if (!groupedItems.has(keyId)) groupedItems.set(keyId, { name: groupName, items: [] });
+                groupedItems.get(keyId).items.push(item);
+            });
+        }
+    
+        const contentHTML = (type === 'material' || type === 'pinjaman')
+            ? [...groupedItems.values()].map(group => {
+                const subTotal = group.items.reduce((sum, item) => {
+                    if (type === 'pinjaman') return sum + ((item.totalRepaymentAmount || item.totalAmount) - (item.paidAmount || 0));
+                    return sum + (item.amount - (item.paidAmount || 0));
+                }, 0);
+                // [DIUBAH] Header sub-seksi dibuat menjadi div statis, bukan button
+                return `
+                    <div class="simulasi-subsection">
+                        <div class="simulasi-subsection-header">
+                            <span>${group.name}</span>
+                            <strong>${fmtIDR(subTotal)}</strong>
+                        </div>
+                        <div class="simulasi-subsection-content">
+                            ${group.items.map(item => createPaymentCard(item, type)).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('')
+            : items.map(item => createPaymentCard(item, type)).join('');
+    
+        return `
+            <div class="card simulasi-section">
+                <button class="simulasi-section-header">
+                     <div class="header-info">
+                        <span class="header-title">${title}</span>
+                        <span class="header-total">${items.length} Tagihan - Total ${fmtIDR(totalAmount)}</span>
+                    </div>
+                    <span class="material-symbols-outlined header-icon">expand_more</span>
+                </button>
+                <div class="simulasi-section-content">
+                    ${contentHTML}
+                </div>
+            </div>`;
+    };
+
+    // [HTML UTAMA] Membangun seluruh halaman dengan struktur yang benar
+    container.innerHTML = `
+        <div class="card card-pad simulasi-summary">
+            <div class="form-group">
+                <label>Dana Masuk (Uang di Tangan)</label>
+                <input type="text" id="simulasi-dana-masuk" inputmode="numeric" placeholder="mis. 10.000.000">
+            </div>
+            <div class="simulasi-totals">
+                <div><span class="label">Total Alokasi</span><strong id="simulasi-total-alokasi">Rp 0</strong></div>
+                <div><span class="label">Sisa Dana</span><strong id="simulasi-sisa-dana">Rp 0</strong></div>
+            </div>
+            <div class="rekap-actions" style="margin-top: 1rem;">
+                <button id="simulasi-buat-pdf" class="btn btn-primary">
+                    <span class="material-symbols-outlined">picture_as_pdf</span> Buat Laporan PDF
+                </button>
+            </div>
+        </div>
+        <div id="simulasi-utang-list">
+            ${createAccordionSection('Tagihan Gaji', salaryBills, 'gaji')}
+            ${createAccordionSection('Tagihan Material & Lainnya', materialBills, 'material')}
+            ${createAccordionSection('Cicilan Pinjaman', unpaidLoans, 'pinjaman')}
+        </div>
+    `;
+
+    // [FUNGSI BARU] Untuk membuka modal aksi saat item disentuh
+    const _openItemActionsModal = (dataset) => {
+        const { id, title, description, fullAmount, partialAllowed } = dataset;
+        const isPartial = partialAllowed === 'true';
+
+        const content = `
+            <div class="simulasi-actions-modal-header">
+                <h5>${title}</h5>
+                <p>${description}</p>
+            </div>
+            <div class="payment-summary">
+                <div class="remaining"><span>Total Tagihan:</span><strong>${fmtIDR(fullAmount)}</strong></div>
+            </div>
+            <div class="simulasi-actions-modal-footer">
+                <button id="modal-select-full" class="btn btn-primary">Pilih Pembayaran Penuh</button>
+                ${isPartial ? `<button id="modal-select-partial" class="btn btn-secondary">Bayar Sebagian</button>` : ''}
+                ${selectedPayments.has(id) ? `<button id="modal-unselect" class="btn btn-danger">Batalkan Pilihan</button>` : ''}
+                <button class="btn btn-secondary" data-close-modal>Tutup</button>
+            </div>
+        `;
+
+        createModal('dataDetail', { title: 'Pilih Aksi Pembayaran', content });
+
+        $('#modal-select-full')?.addEventListener('click', () => {
+            selectedPayments.set(id, Number(fullAmount));
+            _updateSimulasiTotals();
+            closeModal($('#dataDetail-modal'));
+        });
+
+        $('#modal-select-partial')?.addEventListener('click', () => {
+            closeModal($('#dataDetail-modal'));
+            _openPartialPaymentModal(dataset); 
+        });
+        
+        $('#modal-unselect')?.addEventListener('click', () => {
+            selectedPayments.delete(id);
+            _updateSimulasiTotals();
+            closeModal($('#dataDetail-modal'));
+        });
+    };
+    
+// GANTI FUNGSI INI DI DALAM renderSimulasiBayarPage
+const _openPartialPaymentModal = (dataset) => {
+    const { id, title, description, fullAmount } = dataset;
+    // Ambil pembayaran saat ini jika ada, jika tidak, tampilkan placeholder
+    const currentPayment = selectedPayments.get(id) || 0;
+
+    // [KONTEN BARU] Form untuk input pembayaran sebagian
+    const content = `
+        <div class="simulasi-actions-modal-header">
+            <h5>${title}</h5>
+            <p>${description}</p>
+        </div>
+        <div class="payment-summary">
+            <div class="remaining"><span>Total Tagihan:</span><strong>${fmtIDR(fullAmount)}</strong></div>
+        </div>
+        <div class="form-group" style="margin-top: 1rem;">
+            <label>Masukkan Jumlah Pembayaran</label>
+            <input type="text" inputmode="numeric" id="modal-partial-amount" class="form-control" 
+                   value="${currentPayment > 0 ? new Intl.NumberFormat('id-ID').format(currentPayment) : ''}" 
+                   placeholder="0">
+        </div>
+        <div class="modal-footer" style="margin-top: 1.5rem;">
+            <button class="btn btn-secondary" data-close-modal>Batal</button>
+            <button id="modal-save-payment" class="btn btn-primary">Simpan Jumlah</button>
+        </div>
+    `;
+    createModal('dataDetail', { title: 'Bayar Sebagian', content });
+
+    const amountInput = $('#modal-partial-amount');
+    amountInput.addEventListener('input', _formatNumberInput);
+    amountInput.focus(); // Langsung fokus ke input
+    
+    $('#modal-save-payment').addEventListener('click', () => {
+        const newAmount = parseFormattedNumber(amountInput.value);
+        if (newAmount > Number(fullAmount)) {
+            toast('error', 'Pembayaran tidak boleh melebihi total tagihan.');
+            return;
+        }
+        
+        // Update atau hapus dari Map berdasarkan jumlah
+        if (newAmount > 0) {
+            selectedPayments.set(id, newAmount);
+        } else {
+            selectedPayments.delete(id);
+        }
+        
+        _updateSimulasiTotals();
+        closeModal($('#dataDetail-modal'));
+    });
+};
+
+    const _updateSimulasiTotals = () => {
+        const danaMasuk = parseFormattedNumber($('#simulasi-dana-masuk').value);
+        let totalAlokasi = 0;
+        selectedPayments.forEach(amount => totalAlokasi += amount);
+        const sisaDana = danaMasuk - totalAlokasi;
+        
+        $('#simulasi-total-alokasi').textContent = fmtIDR(totalAlokasi);
+        $('#simulasi-sisa-dana').textContent = fmtIDR(sisaDana);
+        $('#simulasi-sisa-dana').classList.toggle('negative', sisaDana < 0);
+
+        $$('.simulasi-item').forEach(card => {
+            const { id, fullAmount } = card.dataset;
+            card.classList.toggle('selected', selectedPayments.has(id));
+            const amountEl = card.querySelector('.simulasi-amount');
+            if (selectedPayments.has(id)) {
+                const paymentAmount = selectedPayments.get(id);
+                if (paymentAmount < Number(fullAmount)) {
+                    amountEl.innerHTML = `${fmtIDR(paymentAmount)} <span class="cicilan-label">/ ${fmtIDR(fullAmount)}</span>`;
+                } else { amountEl.innerHTML = fmtIDR(fullAmount); }
+            } else { amountEl.innerHTML = fmtIDR(fullAmount); }
+        });
+    };
+    
+// GANTI SELURUH FUNGSI INI (YANG ADA DI DALAM renderSimulasiBayarPage)
+function _createSimulasiPDF() {
+    // =======================================================
+    // 1. Kumpulkan & Validasi Data Awal
+    // =======================================================
+    const danaMasuk = parseFormattedNumber($('#simulasi-dana-masuk').value);
+    if (danaMasuk <= 0) {
+        toast('error', 'Silakan masukkan jumlah dana masuk terlebih dahulu.');
+        return;
+    }
+    if (selectedPayments.size === 0) {
+        toast('error', 'Pilih minimal satu tagihan untuk dibayar.');
+        return;
+    }
+
+    toast('syncing', 'Membuat laporan PDF...');
+
+    // =======================================================
+    // 2. Olah dan Kelompokkan Data Terpilih
+    // =======================================================
+    const gajiItems = [];
+    const materialItems = [];
+    const pinjamanItems = [];
+    let totalAlokasi = 0;
+
+    selectedPayments.forEach((amount, id) => {
+        const [itemType, itemId] = id.split('-');
+        let recipient = 'N/A', description = 'N/A';
+        const formattedAmount = fmtIDR(amount);
+        totalAlokasi += amount;
+
+        if (itemType === 'bill') {
+            const bill = appState.bills.find(b => b.id === itemId);
+            if (bill) {
+                description = bill.description;
+                if (bill.type === 'gaji') {
+                    recipient = appState.workers.find(w => w.id === bill.workerId)?.workerName || 'Pekerja';
+                    gajiItems.push([recipient, description, formattedAmount]);
+                } else {
+                    const expense = appState.expenses.find(e => e.id === bill.expenseId);
+                    recipient = appState.suppliers.find(s => s.id === expense?.supplierId)?.supplierName || 'Supplier';
+                    materialItems.push([recipient, description, formattedAmount]);
+                }
+            }
+        } else if (itemType === 'loan') {
+            const loan = appState.fundingSources.find(l => l.id === itemId);
+            if (loan) {
+                recipient = appState.fundingCreditors.find(c => c.id === loan.creditorId)?.creditorName || 'Kreditur';
+                description = 'Cicilan Pinjaman';
+                pinjamanItems.push([recipient, description, formattedAmount]);
+            }
+        }
+    });
+    
+    const sisaDana = danaMasuk - totalAlokasi;
+
+    // =======================================================
+    // 3. Inisialisasi dan Konfigurasi Dokumen PDF
+    // =======================================================
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const logoUrl = 'https://i.ibb.co/XZ5s1WN1/logo-cv-aba.png';
+    let lastY = 0;
+
+    const tableConfig = {
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 9, cellPadding: 2.5 },
+        columnStyles: { 2: { halign: 'right' } }
+    };
+
+    // =======================================================
+    // 4. Gambar Konten PDF
+    // =======================================================
+    // Header
+    if (logoUrl) pdf.addImage(logoUrl, 'PNG', 14, 12, 20, 20);
+    pdf.setFontSize(18).setFont(undefined, 'bold');
+    pdf.text('Simulasi Alokasi Dana', 200, 20, { align: 'right' });
+    pdf.setFontSize(10).setFont(undefined, 'normal');
+    pdf.text(`Dibuat pada: ${new Date().toLocaleDateString('id-ID')}`, 200, 26, { align: 'right' });
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(14, 32, 200, 32);
+
+    // Ringkasan Dana
+    pdf.autoTable({
+        startY: 35,
+        body: [
+            ['Dana Masuk (Uang di Tangan)', fmtIDR(danaMasuk)],
+            ['Total Alokasi Pembayaran', fmtIDR(totalAlokasi)],
+            ['Sisa Dana Setelah Alokasi', fmtIDR(sisaDana)],
+        ],
+        theme: 'plain',
+        styles: { fontSize: 10 },
+        bodyStyles: { fontStyle: 'bold' }
+    });
+    lastY = pdf.autoTable.previous.finalY + 10;
+
+    // Fungsi helper untuk menggambar tabel kategori
+    const drawCategoryTable = (title, headers, data) => {
+        if (data.length > 0) {
+            pdf.setFontSize(12).setFont(undefined, 'bold');
+            pdf.text(title, 14, lastY);
+            pdf.autoTable({
+                ...tableConfig,
+                head: [headers],
+                body: data,
+                startY: lastY + 4
+            });
+            lastY = pdf.autoTable.previous.finalY + 10;
+        }
+    };
+
+    // Gambar tabel untuk setiap kategori
+    drawCategoryTable('Rincian Pembayaran Gaji', ['Penerima', 'Deskripsi', 'Jumlah'], gajiItems);
+    drawCategoryTable('Rincian Tagihan Material & Lainnya', ['Penerima', 'Deskripsi', 'Jumlah'], materialItems);
+    drawCategoryTable('Rincian Cicilan Pinjaman', ['Penerima', 'Deskripsi', 'Jumlah'], pinjamanItems);
+
+    // =======================================================
+    // 5. Simpan PDF
+    // =======================================================
+    const filename = `Simulasi-Alokasi-Dana-${new Date().toISOString().slice(0, 10)}.pdf`;
+    pdf.save(filename);
+    toast('success', 'PDF Simulasi berhasil dibuat!');
+}
+    $$('.simulasi-subsection-header').forEach(header => {
+        header.addEventListener('click', () => {
+            header.closest('.simulasi-subsection').classList.toggle('open');
+        });
+    });
+    $('#simulasi-utang-list').addEventListener('click', (e) => {
+        const card = e.target.closest('.simulasi-item');
+        if (card) {
+            _openItemActionsModal(card.dataset);
+        }
+    });
+    
+    $$('.simulasi-section-header').forEach(header => header.addEventListener('click', () => header.parentElement.classList.toggle('open')));
+    $('#simulasi-dana-masuk').addEventListener('input', _updateSimulasiTotals);
+    $('#simulasi-dana-masuk').addEventListener('input', _formatNumberInput);
+    $('#simulasi-buat-pdf').addEventListener('click', _createSimulasiPDF);
+}
 
     async function renderPengaturanPage() {
         const container = $('.page-container');
@@ -1719,8 +2117,9 @@ async function main() {
             return `<p class="empty-state" style="margin-top: 2rem;">${message}</p>`;
         }
     
+        // [DESAIN BARU] Gunakan list ringkas, bukan kartu
         return `
-        <div style="margin-top: 1rem;">
+        <div class="dense-list-container">
             ${bills.map(item => {
             let supplierName = '';
             if (item.expenseId) {
@@ -1732,48 +2131,46 @@ async function main() {
                 supplierName = appState.workers.find(w => w.id === item.workerId)?.workerName || 'Gaji Karyawan';
             }
     
-            // [MODIFIKASI] Logika untuk membuat badge proyek
-            const project = appState.projects.find(p => p.id === item.projectId);
-            let badgeHTML = '';
-            if (project) {
-                if (project.projectType === 'main_income') {
-                    badgeHTML = `<span class="category-badge category-main">Utama</span>`;
-                } else if (project.projectType === 'internal_expense') {
-                    badgeHTML = `<span class="category-badge category-internal">Internal</span>`;
-                }
-            }
-    
-            const date = item.dueDate?.toDate ? item.dueDate.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Tanggal tidak valid';
-            const subtitle = supplierName ? `${supplierName} · ${date}` : date;
+            const date = item.dueDate?.toDate ? item.dueDate.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : 'N/A';
+            const subtitle = supplierName ? `${supplierName} · Jatuh Tempo: ${date}` : `Jatuh Tempo: ${date}`;
             const remainingAmount = (item.amount || 0) - (item.paidAmount || 0);
             const isPaid = remainingAmount <= 0;
-            let secondaryInfoHTML = '';
+            let statusHTML = '';
     
             if (isPaid) {
-                secondaryInfoHTML = `<div class="paid-indicator"><span class="material-symbols-outlined">task_alt</span> Lunas</div>`;
+                statusHTML = `<span class="status-badge positive">Lunas</span>`;
             } else if (item.paidAmount > 0) {
-                secondaryInfoHTML = `<p class="card-list-item-repayment-info">Sisa: <strong>${fmtIDR(remainingAmount)}</strong></p>`;
+                statusHTML = `<span class="status-badge warn">Sisa ${fmtIDR(remainingAmount)}</span>`;
             } else {
-                secondaryInfoHTML = `<p class="card-list-item-repayment-info" style="color:var(--warn)">Belum Dibayar</p>`
+                statusHTML = `<span class="status-badge negative">Belum Dibayar</span>`;
             }
     
             return `
-            <div class="card card-list-item" data-id="${item.id}" data-type="bill" data-expense-id="${item.expenseId || ''}">
-                <div class="card-list-item-content" data-action="open-bill-actions-modal"> 
-                    <div class="card-list-item-details">
-                        <h5 class="card-list-item-title">${item.description}</h5>
-                        <p class="card-list-item-subtitle">${subtitle}</p>
-                        ${badgeHTML} 
+            <div class="dense-list-item" data-id="${item.id}" data-type="bill" data-expense-id="${item.expenseId || ''}">
+                <div class="item-main-content" data-action="open-bill-detail">
+                    <strong class="item-title">${item.description}</strong>
+                    <span class="item-subtitle">${subtitle}</span>
+                    <div class="item-details">
+                        <strong class="item-amount">${fmtIDR(item.amount)}</strong>
+                        ${statusHTML}
                     </div>
-                    <div class="card-list-item-amount-wrapper">
-                        <strong class="card-list-item-amount">${fmtIDR(item.amount)}</strong>
-                        ${secondaryInfoHTML}
-                    </div>
+                </div>
+                
+                <div class="item-actions">
+                    ${!isPaid ? `
+                        <button class="btn btn-sm btn-success" data-action="pay-bill" data-id="${item.id}" title="Bayar">
+                             <span class="material-symbols-outlined">payment</span> Bayar
+                        </button>
+                    ` : ''}
+                    <button class="btn-icon" data-action="open-bill-actions-modal" data-id="${item.id}" data-expense-id="${item.expenseId || ''}" title="Opsi Lainnya">
+                        <span class="material-symbols-outlined">more_vert</span>
+                    </button>
                 </div>
             </div>`;
             }).join('')}
         </div>`;
     }
+    
     
     async function handlePayBill(billId) {
         createModal('confirmPayBill', {
@@ -2657,29 +3054,169 @@ async function handleManageMasterData(type) {
         }
     }
     
-    async function renderGenericTabPage(pageId, title, tabs) {
-        const container = $('.page-container');
-        container.innerHTML = `
-            <div class="sub-nav">
-                ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
-            </div>
-            <div id="sub-page-content"></div>
-        `;
+// [FUNGSI BARU] Halaman Stok yang telah dirombak
+async function renderStokPage() {
+    const container = $('.page-container');
+    const tabs = [
+        { id: 'daftar', label: 'Daftar Stok' },
+        { id: 'estimasi', label: 'Estimasi Belanja' },
+        { id: 'riwayat', label: 'Riwayat Stok' }
+    ];
+    container.innerHTML = `
+        <div class="sub-nav">
+            ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+        </div>
+        <div id="sub-page-content"></div>
+    `;
 
-        const renderTabContent = async (tabId) => {
-            const contentContainer = $('#sub-page-content');
-            contentContainer.innerHTML = `<div class="card card-pad"><p>Ini adalah konten untuk <strong>${tabId}</strong>.</p></div>`;
+    const renderTabContent = async (tabId) => {
+        appState.activeSubPage.set('stok', tabId);
+        const contentContainer = $('#sub-page-content');
+        contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+        
+        // Kita akan memerlukan data material untuk semua tab
+        await fetchAndCacheData('materials', collection(db, 'teams', TEAM_ID, 'materials'), 'materialName');
+
+        if (tabId === 'daftar') {
+            await _renderDaftarStokView(contentContainer);
+        } else if (tabId === 'estimasi') {
+            await _renderEstimasiBelanjaView(contentContainer);
+        } else if (tabId === 'riwayat') {
+            await _renderRiwayatStokView(contentContainer);
         }
+    };
 
-        $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
-            $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            renderTabContent(e.currentTarget.dataset.tab);
-        }));
+    $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
+        $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        renderTabContent(e.currentTarget.dataset.tab);
+    }));
 
-        await renderTabContent(tabs[0].id);
+    const lastSubPage = appState.activeSubPage.get('stok') || tabs[0].id;
+    $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
+    await renderTabContent(lastSubPage);
+}
+
+// [FUNGSI BARU] Untuk menampilkan Tab Daftar Stok
+async function _renderDaftarStokView(container) {
+    const materials = appState.materials || [];
+    
+    const listHTML = materials.map(item => {
+        const stockLevel = item.currentStock || 0;
+        const reorderPoint = item.reorderPoint || 0;
+        const isLowStock = stockLevel <= reorderPoint;
+
+        return `
+            <div class="card card-list-item">
+                <div class="card-list-item-content">
+                    <div class="card-list-item-details">
+                        <h5 class="card-list-item-title">${item.materialName}</h5>
+                        <p class="card-list-item-subtitle ${isLowStock ? 'negative' : ''}">
+                            Stok saat ini: <strong>${stockLevel} ${item.unit || ''}</strong>
+                            ${isLowStock ? ' (Stok menipis!)' : ''}
+                        </p>
+                    </div>
+                    <div class="stok-actions">
+                        <button class="btn btn-sm btn-success" data-action="stok-in" data-id="${item.id}">
+                            <span class="material-symbols-outlined">add</span>Masuk
+                        </button>
+                        <button class="btn btn-sm btn-danger" data-action="stok-out" data-id="${item.id}">
+                            <span class="material-symbols-outlined">remove</span>Keluar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = `
+        <div class="stok-header">
+            <button class="btn btn-primary" data-action="manage-materials">
+                <span class="material-symbols-outlined">inventory_2</span> Kelola Master Material
+            </button>
+        </div>
+        ${materials.length > 0 ? listHTML : '<p class="empty-state">Belum ada data material. Silakan tambahkan di "Kelola Master Material".</p>'}
+    `;
+}
+
+// [FUNGSI BARU] Untuk menampilkan Tab Estimasi Belanja
+async function _renderEstimasiBelanjaView(container) {
+    const lowStockItems = (appState.materials || []).filter(item => (item.currentStock || 0) <= (item.reorderPoint || 0));
+
+    if (lowStockItems.length === 0) {
+        container.innerHTML = '<p class="empty-state">👍 Stok semua material aman.</p>';
+        return;
+    }
+
+    const listHTML = lowStockItems.map(item => `
+        <tr>
+            <td>${item.materialName}</td>
+            <td>${item.currentStock || 0} / ${item.reorderPoint || 0} ${item.unit || ''}</td>
+            <td>-</td>
+            <td>-</td>
+        </tr>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Material yang Perlu Dipesan Ulang</h5>
+            <div class="recap-table-wrapper">
+                <table class="recap-table">
+                    <thead>
+                        <tr>
+                            <th>Nama Material</th>
+                            <th>Stok Saat Ini / Min.</th>
+                            <th>Qty Rekomendasi</th>
+                            <th>Estimasi Biaya</th>
+                        </tr>
+                    </thead>
+                    <tbody>${listHTML}</tbody>
+                </table>
+                <p class="empty-state-small" style="margin-top:1rem;">*Fitur rekomendasi & estimasi biaya akan dikembangkan lebih lanjut.</p>
+            </div>
+        </div>
+    `;
+}
+
+// [FUNGSI BARU] Untuk menampilkan Tab Riwayat Stok
+async function _renderRiwayatStokView(container) {
+    const transCol = collection(db, 'teams', TEAM_ID, 'stock_transactions');
+    const q = query(transCol, orderBy("date", "desc"));
+    const transSnap = await getDocs(q);
+    const transactions = transSnap.docs.map(d => ({id: d.id, ...d.data()}));
+
+    if (transactions.length === 0) {
+        container.innerHTML = '<p class="empty-state">Belum ada riwayat transaksi stok.</p>';
+        return;
     }
     
+    // Ambil data proyek untuk ditampilkan
+    await fetchAndCacheData('projects', projectsCol, 'projectName');
+
+    const listHTML = transactions.map(trans => {
+        const material = appState.materials.find(m => m.id === trans.materialId);
+        const project = appState.projects.find(p => p.id === trans.projectId);
+        const date = trans.date.toDate().toLocaleDateString('id-ID', {day: '2-digit', month: 'short'});
+        const isStokIn = trans.type === 'in';
+
+        return `
+            <div class="jurnal-item card">
+                <div class="jurnal-item-header">
+                    <strong>${material?.materialName || 'Material Dihapus'}</strong>
+                    <strong class="${isStokIn ? 'positive' : 'negative'}">
+                        ${isStokIn ? '+' : '-'}${trans.quantity} ${material?.unit || ''}
+                    </strong>
+                </div>
+                <div class="jurnal-item-details">
+                    <span>Tanggal: ${date}</span>
+                    <span>${isStokIn ? 'Stok Masuk' : `Digunakan untuk: ${project?.projectName || 'N/A'}`}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `<div class="jurnal-list">${listHTML}</div>`;
+}    
     // =======================================================
     //         FUNGSI-FUNGSI KHUSUS MATERIAL
     // =======================================================
@@ -3132,6 +3669,20 @@ function init() {
         let navTarget = actionTarget.dataset.nav || actionTarget.closest('[data-nav]')?.dataset.nav;
 
         switch (actionTarget.dataset.action) {
+                    case 'cetak-kwitansi': {
+            if (isViewer()) return;
+            handleCetakKwitansi(actionTarget.dataset.id);
+            break;
+        }
+            
+            case 'view-jurnal-harian': {
+                const dateStr = actionTarget.closest('[data-date]').dataset.date;
+                if (dateStr) {
+                    handleViewJurnalHarianModal(dateStr); // Panggil fungsi modal
+                }
+                break;
+            }
+            
             case 'toggle-more-actions':
                 $('#quick-actions-grid')?.classList.toggle('actions-collapsed');
                 break;
@@ -3144,6 +3695,36 @@ function init() {
                 }
                 break;
             }
+            case 'delete-single-attendance':
+                if (isViewer()) return;
+                handleDeleteSingleAttendance(actionTarget.dataset.id);
+                break;
+            
+            // [TAMBAHKAN CASE BARU INI]
+            case 'open-recap-actions': {
+                if (isViewer()) return;
+                const billId = actionTarget.dataset.id;
+                const bill = appState.bills.find(b => b.id === billId);
+                if (!bill) return;
+
+                const actions = [];
+                // Untuk saat ini, aksi utamanya adalah "Batalkan Rekap" (Hapus)
+                // Fitur edit yang lebih kompleks bisa ditambahkan di sini nanti
+                actions.push({ label: 'Lihat Detail', action: 'open-bill-detail', icon: 'visibility', id: billId, type: 'bill' });
+                actions.push({ label: 'Batalkan Rekap', action: 'delete-salary-bill', icon: 'delete_forever', id: billId });
+
+                createModal('actionsMenu', { actions, targetRect: actionTarget.getBoundingClientRect() });
+                break;
+            }
+
+            // [TAMBAHKAN CASE BARU INI]
+            case 'delete-salary-bill': {
+                if (isViewer()) return;
+                handleDeleteSalaryBill(actionTarget.dataset.id);
+                closeModal($('#actionsMenu-modal'));
+                break;
+            }
+            
             case 'trigger-file-input': {
                 const targetName = actionTarget.dataset.target;
                 const input = $(`input[name="${targetName}"]`);
@@ -3239,12 +3820,29 @@ function init() {
                  if (isViewer()) return;
                  createModal('dataDetail', { title: 'Pilih Master Data', content: `<div class="settings-list">${Object.entries(masterDataConfig).filter(([key]) => key !== 'projects' && key !== 'clients').map(([key, config]) => `<div class="settings-list-item" data-action="manage-master" data-type="${key}"><div class="icon-wrapper"><span class="material-symbols-outlined">database</span></div><span class="label">${config.title}</span></div>`).join('')}</div>`});
                 break;
+            case 'manage-materials':
+                    // Kita bisa menggunakan ulang handler master data, tapi untuk material perlu form khusus
+                    // Untuk sementara, kita buat placeholder
+                toast('info', 'Fitur Kelola Master Material sedang dikembangkan.');
+                break;
+            case 'stok-in':
+                handleStokInModal(actionTarget.dataset.id);
+                break;
+            case 'stok-out':
+                handleStokOutModal(actionTarget.dataset.id);
+                break;
             case 'edit-master-item': if (isViewer()) return; handleEditMasterItem(id, type); break;
             case 'delete-master-item': if (isViewer()) return; handleDeleteMasterItem(id, type); break;
             case 'check-in': if (isViewer()) return; handleCheckIn(actionTarget.dataset.id); break;
             case 'check-out': if (isViewer()) return; handleCheckOut(actionTarget.dataset.id); break;
-            case 'edit-attendance': if (isViewer()) return; handleEditAttendanceModal(actionTarget.dataset.id); break;
-            case 'generate-salary-bill': if (isViewer()) return; handleGenerateSalaryBill(actionTarget.dataset); break;
+            case 'edit-attendance':
+                if (isViewer()) return;
+                handleEditManualAttendanceModal(actionTarget.dataset.id); 
+                break;
+            case 'generate-salary-bill': 
+                if (isViewer()) return; 
+                handleGenerateSalaryBill(actionTarget.dataset); 
+                break;
             case 'delete-recap-item': if (isViewer()) return; handleDeleteRecapItem(actionTarget.dataset.recordIds); break;
             case 'view-worker-recap': handleViewWorkerRecap(actionTarget.dataset); break;
             case 'manage-users': if (isViewer()) return; handleManageUsers(); break;
@@ -3252,11 +3850,19 @@ function init() {
             case 'upload-attachment': if (isViewer()) return; handleUploadAttachment(actionTarget.dataset); break;
             case 'download-attachment': _downloadAttachment(actionTarget.dataset.url, actionTarget.dataset.filename); break;
             case 'delete-attachment': if(isViewer()) return; handleDeleteAttachment(actionTarget.dataset); break;
-            case 'download-report': _handleDownloadReport('pdf'); break;
-            case 'download-csv': _handleDownloadReport('csv'); break;
-        }
-    });
-
+            case 'download-report': {
+                const reportType = actionTarget.dataset.reportType || 'rekapan';
+                _handleDownloadReport('pdf', reportType); 
+                break;
+            }
+            // [GANTI CASE INI]
+            case 'download-csv': {
+                const reportType = actionTarget.dataset.reportType || 'rekapan';
+                _handleDownloadReport('csv', reportType);
+                break;
+            }
+            }
+});
     // Listener untuk Status Online/Offline & Service Worker
     window.addEventListener('online', () => { appState.isOnline = true; toast('online', 'Kembali online'); syncOfflineData(); });
     window.addEventListener('offline', () => { appState.isOnline = false; toast('offline', 'Anda sedang offline'); });
@@ -3660,15 +4266,14 @@ function init() {
     // =======================================================
     
     async function renderAbsensiPage() {
-        // [PERBAIKAN] Pastikan baris ini ada. Inilah yang menyebabkan error.
         const container = $('.page-container');
     
+        // [MODIFIKASI] Hapus tab 'rekap' dan 'jurnal'
         const tabs = [
             {id:'manual', label:'Input Manual'},
-            {id:'harian', label:'Absensi Harian'}, 
-            {id:'rekap', label:'Rekap Gaji'},
-            {id:'jurnal', label:'Jurnal Absensi'}
+            {id:'harian', label:'Absensi Harian'}
         ];
+
         container.innerHTML = `
             ${isViewer() ? '' : `<div class="attendance-header">
                  <button class="btn" data-action="manage-master" data-type="workers">
@@ -3697,6 +4302,7 @@ function init() {
                 fetchAndCacheData('projects', projectsCol, 'projectName')
             ]);
     
+            // [MODIFIKASI] Hapus logika untuk tab 'rekap' dan 'jurnal' dari sini
             if(tabId === 'harian') {
                 await _fetchTodaysAttendance();
                 contentContainer.innerHTML = _getDailyAttendanceHTML();
@@ -3704,21 +4310,6 @@ function init() {
                 contentContainer.querySelector('#attendance-profession-filter')?.addEventListener('change', () => _rerenderAttendanceList());
                 contentContainer.querySelector('#attendance-project-id')?.addEventListener('change', () => _rerenderAttendanceList());
     
-            } else if (tabId === 'rekap') {
-                contentContainer.innerHTML = _getSalaryRecapHTML();
-                if(!isViewer()) {
-                    $('#generate-recap-btn')?.addEventListener('click', () => {
-                        const startDate = $('#recap-start-date').value;
-                        const endDate = $('#recap-end-date').value;
-                        if (startDate && endDate) {
-                            generateSalaryRecap(new Date(startDate), new Date(endDate));
-                        } else {
-                            toast('error', 'Silakan pilih rentang tanggal.');
-                        }
-                    });
-                } else {
-                     generateSalaryRecap(new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date());
-                }
             } else if (tabId === 'manual') {
                 contentContainer.innerHTML = _getManualAttendanceHTML();
                 _initCustomSelects(contentContainer); 
@@ -3730,12 +4321,6 @@ function init() {
                 if(!isViewer()) $('#manual-attendance-form').addEventListener('submit', handleSaveManualAttendance);
                 
                 _renderManualAttendanceList(dateInput.value, projectInput.value);
-            }
-            else if (tabId === 'jurnal') {
-                contentContainer.innerHTML = _getAbsensiJurnalHTML();
-                const dateInput = $('#jurnal-tanggal');
-                dateInput.addEventListener('change', () => _renderAbsensiJurnalList(dateInput.value));
-                await _renderAbsensiJurnalList(dateInput.value);
             }
         };
     
@@ -3750,7 +4335,7 @@ function init() {
         if($(`.sub-nav-item[data-tab="${lastSubPage}"]`)) $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
         await renderTabContent(lastSubPage);
     }
-        
+
     function _getDailyAttendanceHTML() {
         const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         const projectOptions = appState.projects.map(p => ({value: p.id, text: p.projectName}));
@@ -3912,36 +4497,100 @@ function init() {
         }
     }
 
-    async function handleEditAttendanceModal(recordId) {
-        const recordRef = doc(attendanceRecordsCol, recordId);
-        const recordSnap = await getDoc(recordRef);
-        if (!recordSnap.exists()) {
-            toast('error', 'Data absensi tidak ditemukan.');
-            return;
-        }
-        const record = recordSnap.data();
+// [MODIFIKASI] Ubah tampilan pilihan status menjadi tombol
+async function handleEditManualAttendanceModal(recordId) {
+    const recordSnap = await getDoc(doc(attendanceRecordsCol, recordId));
+    if (!recordSnap.exists()) {
+        toast('error', 'Data absensi tidak ditemukan.');
+        return;
+    }
+    const record = { id: recordSnap.id, ...recordSnap.data() };
     
-        const toTimeInput = (timestamp) => {
-            return timestamp.toDate().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        };
-    
-        const content = `
-            <form id="edit-attendance-form" data-id="${recordId}">
-                <p>Mengedit absensi untuk <strong>${record.workerName}</strong> pada tanggal ${record.date.toDate().toLocaleDateString('id-ID')}.</p>
-                <div class="form-group">
-                    <label>Waktu Check-in</label>
-                    <input type="time" name="checkIn" value="${toTimeInput(record.checkIn)}" required>
-                </div>
-                 <div class="form-group">
-                    <label>Waktu Check-out</label>
-                    <input type="time" name="checkOut" value="${toTimeInput(record.checkOut)}" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
-            </form>
-        `;
-        createModal('editAttendance', { title: 'Edit Waktu Absensi', content });
+    if (record.type !== 'manual') {
+        toast('error', 'Hanya absensi manual yang bisa diedit statusnya.');
+        return;
     }
 
+    const currentStatus = record.attendanceStatus || 'absent';
+    
+    // [DESAIN BARU] Menggunakan struktur input radio yang disembunyikan dan label sebagai tombol
+    const content = `
+        <form id="edit-manual-attendance-form" data-id="${recordId}">
+            <p style="margin-bottom: 1rem;">Mengedit status absensi untuk <strong>${record.workerName}</strong>.</p>
+            <div class="form-group">
+                <label style="margin-bottom: 0.5rem;">Status Kehadiran</label>
+                <div class="button-group-selector">
+                    <input type="radio" id="edit-status-full" name="edit-status" value="full_day" ${currentStatus === 'full_day' ? 'checked' : ''}>
+                    <label for="edit-status-full">Hadir</label>
+                    
+                    <input type="radio" id="edit-status-half" name="edit-status" value="half_day" ${currentStatus === 'half_day' ? 'checked' : ''}>
+                    <label for="edit-status-half">1/2 Hari</label>
+
+                    <input type="radio" id="edit-status-absent" name="edit-status" value="absent" ${currentStatus === 'absent' ? 'checked' : ''}>
+                    <label for="edit-status-absent">Absen</label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1.5rem;">Simpan Perubahan</button>
+        </form>
+    `;
+    
+    createModal('dataDetail', { title: 'Edit Status Absensi', content });
+
+    $('#edit-manual-attendance-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        // Panggil fungsi update yang sudah ada, tidak perlu diubah
+        handleUpdateManualAttendance(e.target);
+    });
+}
+
+// [FUNGSI BARU] Menyimpan perubahan dari modal edit absensi manual
+async function handleUpdateManualAttendance(form) {
+    const recordId = form.dataset.id;
+    const newStatus = form.querySelector('input[name="edit-status"]:checked')?.value;
+
+    if (!newStatus) {
+        toast('error', 'Silakan pilih status.');
+        return;
+    }
+
+    toast('syncing', 'Menyimpan perubahan...');
+    try {
+        const recordRef = doc(attendanceRecordsCol, recordId);
+
+        if (newStatus === 'absent') {
+            // Jika diubah menjadi absen, hapus data absensinya
+            await deleteDoc(recordRef);
+            await _logActivity(`Mengubah Status Absensi Manual menjadi Absen`, { recordId });
+        } else {
+            // Jika hadir atau setengah hari, update datanya
+            const recordSnap = await getDoc(recordRef);
+            if (!recordSnap.exists()) throw new Error('Record not found');
+            const recordData = recordSnap.data();
+
+            const dailyWage = recordData.dailyWage || 0;
+            let newPay = 0;
+            if (newStatus === 'full_day') newPay = dailyWage;
+            else if (newStatus === 'half_day') newPay = dailyWage / 2;
+
+            await updateDoc(recordRef, {
+                attendanceStatus: newStatus,
+                totalPay: newPay
+            });
+            await _logActivity(`Mengubah Status Absensi Manual`, { recordId, newStatus });
+        }
+
+        toast('success', 'Status absensi berhasil diperbarui.');
+        closeModal($('#editAttendance-modal'));
+        
+        // Muat ulang data terbaru dan render ulang halaman
+        await fetchAndCacheData('attendanceRecords', attendanceRecordsCol, 'date');
+        renderJurnalPage();
+
+    } catch (error) {
+        toast('error', 'Gagal memperbarui status.');
+        console.error('Error updating manual attendance:', error);
+    }
+}
     async function handleUpdateAttendance(form) {
         const recordId = form.dataset.id;
         const newCheckInString = form.elements.checkIn.value;
@@ -4215,6 +4864,43 @@ function init() {
         `;
     }
 
+    // [FUNGSI BARU] Untuk menghapus tagihan gaji dan mereset status absensi
+    async function handleDeleteSalaryBill(billId) {
+        createModal('confirmDelete', {
+            message: 'Membatalkan rekap akan menghapus tagihan ini dan mengembalikan status absensi terkait menjadi "belum dibayar". Anda bisa membuat rekap baru setelahnya. Lanjutkan?',
+            onConfirm: async () => {
+                toast('syncing', 'Membatalkan rekap...');
+                try {
+                    const billRef = doc(billsCol, billId);
+                    const billSnap = await getDoc(billRef);
+                    if (!billSnap.exists()) throw new Error('Tagihan tidak ditemukan');
+                    
+                    const recordIds = billSnap.data().recordIds || [];
+
+                    const batch = writeBatch(db);
+                    // Reset status absensi
+                    recordIds.forEach(id => {
+                        batch.update(doc(attendanceRecordsCol, id), { isPaid: false, billId: null });
+                    });
+                    // Hapus tagihan
+                    batch.delete(billRef);
+
+                    await batch.commit();
+                    await _logActivity(`Membatalkan Rekap Gaji`, { billId });
+                    toast('success', 'Rekap gaji berhasil dibatalkan.');
+                    
+                    // Muat ulang data dan render ulang halaman
+                    await fetchAndCacheData('bills', billsCol);
+                    renderJurnalPage();
+
+                } catch (error) {
+                    toast('error', 'Gagal membatalkan rekap.');
+                    console.error('Error deleting salary bill:', error);
+                }
+            }
+        });
+    }
+
     async function _renderManualAttendanceList(dateStr, projectId) {
         const container = $('#manual-attendance-list-container');
         if (!dateStr || !projectId) {
@@ -4476,108 +5162,373 @@ async function handleViewWorkerRecap(dataset) {
         );
     });
 }
-
-async function _generateWorkerRecap(workerId, startDateStr, endDateStr) {
-    const container = $('#worker-recap-results');
-    if (!container) return;
-    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
-
-    const startDate = new Date(startDateStr);
-    const endDate = new Date(endDateStr);
-    endDate.setHours(23, 59, 59, 999);
-
-    const q = query(attendanceRecordsCol,
-        where('workerId', '==', workerId),
-        where('date', '>=', startDate),
-        where('date', '<=', endDate),
-        orderBy('date', 'desc')
-    );
-    const snap = await getDocs(q);
-
-    if (snap.empty) {
-        container.innerHTML = `<p class="empty-state">Tidak ada catatan absensi untuk pekerja ini pada periode yang dipilih.</p>`;
+// [MODIFIKASI] Tata letak diperbaiki dan logika disatukan
+function handleViewJurnalHarianModal(dateStr) {
+    const dayData = _groupAttendanceByDay(appState.attendanceRecords)[dateStr];
+    if (!dayData) {
+        toast('error', 'Data untuk tanggal ini tidak ditemukan.');
         return;
     }
+    const dayDate = new Date(dateStr);
+    const formattedDate = dayDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
 
-    const records = snap.docs.map(doc => doc.data());
+    const renderModalContent = (filterProjectId = 'all') => {
+        let filteredRecords = dayData.records;
+        if (filterProjectId !== 'all') {
+            filteredRecords = dayData.records.filter(rec => rec.projectId === filterProjectId);
+        }
+        
+        const totalBeban = filteredRecords.reduce((sum, rec) => sum + (rec.totalPay || 0), 0);
+        
+        // Menggunakan konteks modal untuk menemukan elemen
+        const modalEl = $('#dataDetail-modal');
+        if (!modalEl) return;
+
+        const summaryContainer = $('#jurnal-detail-summary', modalEl);
+        if(summaryContainer) {
+            summaryContainer.innerHTML = `
+                <h5 class="summary-title">Total Beban Upah</h5>
+                <strong class="summary-total negative">${fmtIDR(totalBeban)}</strong>
+            `;
+        }
+
+        const getStatus = (rec) => {
+            if ((rec.totalPay || 0) <= 0) return { score: 3, text: 'Absen', class: 'status-absen' };
+            if (rec.attendanceStatus === 'half_day') return { score: 2, text: '1/2 Hari', class: 'status-setengah' };
+            return { score: 1, text: 'Hadir', class: 'status-hadir' };
+        };
+        const sortedRecords = [...filteredRecords].sort((a, b) => getStatus(a).score - getStatus(b).score);
+        const listContainer = $('#jurnal-pekerja-list', modalEl);
+        
+        if (listContainer) {
+            if (sortedRecords.length === 0) {
+                listContainer.innerHTML = `<p class="empty-state">Tidak ada data absensi untuk filter ini.</p>`;
+                return;
+            }
+            const listHTML = sortedRecords.map(rec => {
+                const worker = appState.workers.find(w => w.id === rec.workerId);
+                const project = appState.projects.find(p => p.id === rec.projectId);
+                const status = getStatus(rec);
+                let badgeHTML = '';
+                if (project) {
+                    if (project.projectType === 'main_income') {
+                        badgeHTML = `<span class="category-badge category-main">Utama</span>`;
+                    } else if (project.projectType === 'internal_expense') {
+                        badgeHTML = `<span class="category-badge category-internal">Internal</span>`;
+                    }
+                }
+                const actionsHTML = isViewer() ? '' : `
+                    <div class="jurnal-pekerja-actions">
+                        <button class="btn-icon" data-action="edit-attendance" data-id="${rec.id}" title="Edit Waktu">
+                            <span class="material-symbols-outlined">edit_calendar</span>
+                        </button>
+                        <button class="btn-icon btn-icon-danger" data-action="delete-single-attendance" data-id="${rec.id}" title="Hapus Absensi">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                `;
+                return `
+                    <div class="card jurnal-pekerja-item">
+                        <div class="jurnal-pekerja-info">
+                            <strong>${worker?.workerName || 'Pekerja Dihapus'}</strong>
+                            <span>${project?.projectName || 'Proyek Dihapus'}</span>
+                        </div>
+                        <div class="jurnal-pekerja-status">
+                            <strong class="negative">${fmtIDR(rec.totalPay || 0)}</strong>
+                            <span class="status-badge ${status.class}">${status.text}</span>
+                        </div>
+                        ${actionsHTML}
+                    </div>
+                `;
+            }).join('');
+            listContainer.innerHTML = listHTML;
+        }
+    };
     
-    const totalPay = records.reduce((sum, rec) => sum + (rec.totalPay || 0), 0);
-    const totalDays = records.length;
-    const totalHours = records.reduce((sum, rec) => sum + (rec.workHours || 8), 0); // Asumsi 8 jam utk manual
-
-    const summaryHTML = `
-        <div class="worker-recap-summary card">
-            <div><span class="label">Total Hari Kerja</span><strong>${totalDays} Hari</strong></div>
-            <div><span class="label">Total Jam Kerja</span><strong>${totalHours.toFixed(1)} Jam</strong></div>
-            <div class="total-gaji"><span class="label">Total Gaji</span><strong>${fmtIDR(totalPay)}</strong></div>
-        </div>
+    const projectIds = [...new Set(dayData.records.map(rec => rec.projectId))];
+    const projectsInvolved = projectIds.map(id => appState.projects.find(p => p.id === id)).filter(Boolean);
+    const projectFiltersHTML = `
+        <button class="sub-nav-item active" data-project-id="all">Semua Proyek</button>
+        ${projectsInvolved.map(p => `<button class="sub-nav-item" data-project-id="${p.id}">${p.projectName}</button>`).join('')}
     `;
-
-    const listHTML = records.map(rec => {
-        const date = rec.date.toDate().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
-        const project = appState.projects.find(p => p.id === rec.projectId);
-        let statusText = rec.isPaid ? 'Lunas' : 'Belum Dibayar';
-
-        return `
-            <div class="detail-list-item">
-                <div class="item-main">
-                    <span class="item-date">${date}</span>
-                    <span class="item-project">${project?.projectName || ''}</span>
-                </div>
-                <div class="item-secondary">
-                    <span class="item-status ${rec.isPaid ? 'paid' : 'unpaid'}">${statusText}</span>
-                    <strong class="item-amount">${fmtIDR(rec.totalPay || 0)}</strong>
-                </div>
+    
+    const modalContentHTML = `
+        <div class="jurnal-detail-header">
+            <div id="jurnal-detail-summary" class="card card-pad summary-card"></div>
+            <div id="jurnal-project-filters" class="category-sub-nav">
+                ${projectFiltersHTML}
             </div>
-        `;
-    }).join('');
-
-    container.innerHTML = summaryHTML + `<div class="detail-list-container">${listHTML}</div>`;
+        </div>
+        <div id="jurnal-pekerja-list" class="jurnal-pekerja-list"></div>
+    `;
+    
+    // Buat modal terlebih dahulu
+    createModal('dataDetail', { title: `Rincian Jurnal: ${formattedDate}`, content: modalContentHTML });
+    
+    // Setelah modal ada di DOM, baru render konten dan pasang listener
+    const modalElement = $('#dataDetail-modal');
+    if (modalElement) {
+        renderModalContent('all'); 
+        
+        $('#jurnal-project-filters', modalElement).addEventListener('click', e => {
+            const btn = e.target.closest('.sub-nav-item');
+            if (btn) {
+                $('#jurnal-project-filters .active', modalElement).classList.remove('active');
+                btn.classList.add('active');
+                renderModalContent(btn.dataset.projectId);
+            }
+        });
+    }
 }
 
-async function handleManageUsers() {
-    toast('syncing', 'Memuat data pengguna...');
-    try {
-        const pendingQuery = query(membersCol, where("status", "==", "pending"));
-        const pendingSnap = await getDocs(pendingQuery);
-        const pendingUsers = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        async function handleDeleteSingleAttendance(recordId) {
+            createModal('confirmDelete', {
+                message: 'Anda yakin ingin menghapus data absensi ini? Aksi ini tidak dapat dibatalkan.',
+                onConfirm: async () => {
+                    toast('syncing', 'Menghapus data...');
+                    try {
+                        await deleteDoc(doc(attendanceRecordsCol, recordId));
+                        await _logActivity(`Menghapus Absensi Tunggal`, { recordId });
+                        toast('success', 'Data absensi berhasil dihapus.');
+                        
+                        // Muat ulang data dan render ulang halaman/modal
+                        await fetchAndCacheData('attendanceRecords', attendanceRecordsCol, 'date');
+                        closeModal($('#dataDetail-modal')); // Tutup modal lama
+                        renderJurnalPage(); // Render ulang seluruh halaman jurnal
+                    } catch (error) {
+                        toast('error', 'Gagal menghapus data.');
+                        console.error('Error deleting single attendance:', error);
+                    }
+                }
+            });
+        }
+        async function _generateWorkerRecap(workerId, startDateStr, endDateStr) {
+            const container = $('#worker-recap-results');
+            if (!container) return;
+            container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
 
-        const otherUsersQuery = query(membersCol, where("status", "!=", "pending"));
-        const otherUsersSnap = await getDocs(otherUsersQuery);
-        const otherUsers = otherUsersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const startDate = new Date(startDateStr);
+            const endDate = new Date(endDateStr);
+            endDate.setHours(23, 59, 59, 999);
 
-        appState.users = [...pendingUsers, ...otherUsers];
+            const q = query(attendanceRecordsCol,
+                where('workerId', '==', workerId),
+                where('date', '>=', startDate),
+                where('date', '<=', endDate),
+                orderBy('date', 'desc')
+            );
+            const snap = await getDocs(q);
 
-        const createUserHTML = (user) => {
-            const userRole = user.role || 'viewer';
-            const userStatus = user.status || 'pending';
-            return `
-            <div class="master-data-item">
-                <div class="user-info-container">
-                    <strong>${user.name}</strong>
-                    <span class="user-email">${user.email}</span>
-                    <div class="user-badges">
-                        <span class="user-badge role-${userRole.toLowerCase()}">${userRole}</span>
-                        <span class="user-badge status-${userStatus.toLowerCase()}">${userStatus}</span>
+            if (snap.empty) {
+                container.innerHTML = `<p class="empty-state">Tidak ada catatan absensi untuk pekerja ini pada periode yang dipilih.</p>`;
+                return;
+            }
+
+            const records = snap.docs.map(doc => doc.data());
+            
+            const totalPay = records.reduce((sum, rec) => sum + (rec.totalPay || 0), 0);
+            const totalDays = records.length;
+            const totalHours = records.reduce((sum, rec) => sum + (rec.workHours || 8), 0); // Asumsi 8 jam utk manual
+
+            const summaryHTML = `
+                <div class="worker-recap-summary card">
+                    <div><span class="label">Total Hari Kerja</span><strong>${totalDays} Hari</strong></div>
+                    <div><span class="label">Total Jam Kerja</span><strong>${totalHours.toFixed(1)} Jam</strong></div>
+                    <div class="total-gaji"><span class="label">Total Gaji</span><strong>${fmtIDR(totalPay)}</strong></div>
+                </div>
+            `;
+
+            const listHTML = records.map(rec => {
+                const date = rec.date.toDate().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+                const project = appState.projects.find(p => p.id === rec.projectId);
+                let statusText = rec.isPaid ? 'Lunas' : 'Belum Dibayar';
+
+                return `
+                    <div class="detail-list-item">
+                        <div class="item-main">
+                            <span class="item-date">${date}</span>
+                            <span class="item-project">${project?.projectName || ''}</span>
+                        </div>
+                        <div class="item-secondary">
+                            <span class="item-status ${rec.isPaid ? 'paid' : 'unpaid'}">${statusText}</span>
+                            <strong class="item-amount">${fmtIDR(rec.totalPay || 0)}</strong>
+                        </div>
                     </div>
+                `;
+            }).join('');
+
+            container.innerHTML = summaryHTML + `<div class="detail-list-container">${listHTML}</div>`;
+        }
+        // [FUNGSI BARU] Membuka modal untuk mencatat stok masuk (pembelian)
+    async function handleStokInModal(materialId) {
+        const material = appState.materials.find(m => m.id === materialId);
+        if (!material) return toast('error', 'Material tidak ditemukan.');
+
+        const content = `
+            <form id="stok-in-form" data-id="${materialId}">
+                <p>Mencatat pembelian untuk <strong>${material.materialName}</strong>.</p>
+                <div class="form-group">
+                    <label>Jumlah Masuk (dalam ${material.unit || 'satuan'})</label>
+                    <input type="number" name="quantity" required min="1">
                 </div>
-                <div class="master-data-item-actions">
-                     ${user.status === 'pending' ? `
-                        <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
-                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
-                    ` : ''}
-                    ${user.status === 'active' && user.role !== 'Owner' ? `
-                        ${user.role !== 'Editor' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-editor" title="Jadikan Editor"><span class="material-symbols-outlined">edit_note</span></button>`:''}
-                        ${user.role !== 'Viewer' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-viewer" title="Jadikan Viewer"><span class="material-symbols-outlined">visibility</span></button>`:''}
-                        <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
-                    `: ''}
+                <div class="form-group">
+                    <label>Harga per Satuan</label>
+                    <input type="text" name="price" inputmode="numeric" required>
                 </div>
-            </div>`;
-        };
-    
-        const pendingUsersHTML = pendingUsers.length > 0
-            ? `<h5 class="detail-section-title" style="margin-top: 0;">Menunggu Persetujuan</h5>${pendingUsers.map(createUserHTML).join('')}`
-            : '';
+                <div class="form-group">
+                    <label>Tanggal Pembelian</label>
+                    <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </form>
+        `;
+        createModal('dataDetail', { title: 'Form Stok Masuk', content });
+        $('#stok-in-form input[name="price"]').addEventListener('input', _formatNumberInput);
+        $('#stok-in-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            processStokIn(e.target);
+            closeModal($('#dataDetail-modal'));
+        });
+    }
+
+    // [FUNGSI BARU] Membuka modal untuk mencatat stok keluar (pemakaian)
+    async function handleStokOutModal(materialId) {
+        const material = appState.materials.find(m => m.id === materialId);
+        if (!material) return toast('error', 'Material tidak ditemukan.');
+
+        const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
+
+        const content = `
+            <form id="stok-out-form" data-id="${materialId}">
+                <p>Mencatat pemakaian untuk <strong>${material.materialName}</strong>.</p>
+                <div class="form-group">
+                    <label>Jumlah Keluar (dalam ${material.unit || 'satuan'})</label>
+                    <input type="number" name="quantity" required min="1" max="${material.currentStock || 0}">
+                </div>
+                ${createMasterDataSelect('projectId', 'Digunakan untuk Proyek', projectOptions, '', 'projects')}
+                <div class="form-group">
+                    <label>Tanggal Pemakaian</label>
+                    <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </form>
+        `;
+        createModal('dataDetail', { title: 'Form Stok Keluar', content });
+        _initCustomSelects($('#dataDetail-modal'));
+        $('#stok-out-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            processStokOut(e.target);
+            closeModal($('#dataDetail-modal'));
+        });
+    }
+
+    // [FUNGSI BARU] Logika untuk memproses data stok masuk ke database
+    async function processStokIn(form) {
+        const materialId = form.dataset.id;
+        const quantity = Number(form.elements.quantity.value);
+        const price = parseFormattedNumber(form.elements.price.value);
+        const date = new Date(form.elements.date.value);
+        
+        toast('syncing', 'Menyimpan data stok...');
+        try {
+            const materialRef = doc(db, 'teams', TEAM_ID, 'materials', materialId);
+            const transRef = doc(collection(db, 'teams', TEAM_ID, 'stock_transactions'));
+
+            await runTransaction(db, async (transaction) => {
+                // 1. Update jumlah stok di master material
+                transaction.update(materialRef, { currentStock: increment(quantity) });
+                // 2. Buat catatan transaksi
+                transaction.set(transRef, {
+                    materialId, quantity, date: Timestamp.fromDate(date),
+                    type: 'in', pricePerUnit: price, createdAt: serverTimestamp()
+                });
+            });
+            await _logActivity('Mencatat Stok Masuk', { materialId, quantity });
+            toast('success', 'Stok berhasil diperbarui.');
+            renderStokPage(); // Render ulang halaman
+        } catch (error) {
+            toast('error', 'Gagal memperbarui stok.');
+            console.error(error);
+        }
+    }
+
+    // [FUNGSI BARU] Logika untuk memproses data stok keluar ke database
+    async function processStokOut(form) {
+        const materialId = form.dataset.id;
+        const quantity = Number(form.elements.quantity.value);
+        const projectId = form.elements.projectId.value;
+        const date = new Date(form.elements.date.value);
+
+        if (!projectId) return toast('error', 'Proyek harus dipilih.');
+
+        toast('syncing', 'Menyimpan data pemakaian...');
+        try {
+            const materialRef = doc(db, 'teams', TEAM_ID, 'materials', materialId);
+            const transRef = doc(collection(db, 'teams', TEAM_ID, 'stock_transactions'));
+
+            await runTransaction(db, async (transaction) => {
+                const matDoc = await transaction.get(materialRef);
+                if (!matDoc.exists() || (matDoc.data().currentStock || 0) < quantity) {
+                    throw new Error("Stok tidak mencukupi!");
+                }
+                transaction.update(materialRef, { currentStock: increment(-quantity) });
+                transaction.set(transRef, {
+                    materialId, quantity, date: Timestamp.fromDate(date),
+                    type: 'out', projectId, createdAt: serverTimestamp()
+                });
+            });
+            await _logActivity('Mencatat Stok Keluar', { materialId, quantity, projectId });
+            toast('success', 'Pemakaian stok berhasil dicatat.');
+            renderStokPage(); // Render ulang halaman
+        } catch (error) {
+            toast('error', error.message || 'Gagal mencatat pemakaian.');
+            console.error(error);
+        }
+    }
+
+        async function handleManageUsers() {
+            toast('syncing', 'Memuat data pengguna...');
+            try {
+                const pendingQuery = query(membersCol, where("status", "==", "pending"));
+                const pendingSnap = await getDocs(pendingQuery);
+                const pendingUsers = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                const otherUsersQuery = query(membersCol, where("status", "!=", "pending"));
+                const otherUsersSnap = await getDocs(otherUsersQuery);
+                const otherUsers = otherUsersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                appState.users = [...pendingUsers, ...otherUsers];
+
+                const createUserHTML = (user) => {
+                    const userRole = user.role || 'viewer';
+                    const userStatus = user.status || 'pending';
+                    return `
+                    <div class="master-data-item">
+                        <div class="user-info-container">
+                            <strong>${user.name}</strong>
+                            <span class="user-email">${user.email}</span>
+                            <div class="user-badges">
+                                <span class="user-badge role-${userRole.toLowerCase()}">${userRole}</span>
+                                <span class="user-badge status-${userStatus.toLowerCase()}">${userStatus}</span>
+                            </div>
+                        </div>
+                        <div class="master-data-item-actions">
+                            ${user.status === 'pending' ? `
+                                <button class="btn-icon btn-icon-success" data-action="user-action" data-id="${user.id}" data-type="approve" title="Setujui"><span class="material-symbols-outlined">check_circle</span></button>
+                                <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Tolak/Hapus"><span class="material-symbols-outlined">cancel</span></button>
+                            ` : ''}
+                            ${user.status === 'active' && user.role !== 'Owner' ? `
+                                ${user.role !== 'Editor' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-editor" title="Jadikan Editor"><span class="material-symbols-outlined">edit_note</span></button>`:''}
+                                ${user.role !== 'Viewer' ? `<button class="btn-icon" data-action="user-action" data-id="${user.id}" data-type="make-viewer" title="Jadikan Viewer"><span class="material-symbols-outlined">visibility</span></button>`:''}
+                                <button class="btn-icon btn-icon-danger" data-action="user-action" data-id="${user.id}" data-type="delete" title="Hapus"><span class="material-symbols-outlined">delete</span></button>
+                            `: ''}
+                        </div>
+                    </div>`;
+                };
+            
+                const pendingUsersHTML = pendingUsers.length > 0
+                    ? `<h5 class="detail-section-title" style="margin-top: 0;">Menunggu Persetujuan</h5>${pendingUsers.map(createUserHTML).join('')}`
+                    : '';
     
         const otherUsersSorted = otherUsers.sort((a, b) => (a.role === 'Owner' ? -1 : 1));
         const otherUsersHTML = otherUsers.length > 0
@@ -4647,49 +5598,44 @@ async function handleManageUsers() {
 
     async function renderJurnalPage() {
         const container = $('.page-container');
-        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
         
-        // Ambil semua data yang relevan
-        await Promise.all([
-            fetchAndCacheData('workers', workersCol, 'workerName'),
-            fetchAndCacheData('projects', projectsCol, 'projectName'),
-            fetchAndCacheData('attendanceRecords', attendanceRecordsCol, 'date')
-        ]);
-        
-        // Kelompokkan data absensi per hari
-        const groupedByDay = _groupAttendanceByDay(appState.attendanceRecords);
-        
-        // Urutkan hari dari yang terbaru
-        const sortedDays = Object.entries(groupedByDay).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+        // [MODIFIKASI] Definisikan tab utama untuk Jurnal
+        const mainTabs = [
+            {id:'jurnal_absensi', label:'Jurnal Absensi'},
+            {id:'rekap_gaji', label:'Rekap Gaji'}
+        ];
 
-        if (sortedDays.length === 0) {
-            container.innerHTML = '<p class="empty-state">Belum ada data absensi yang tercatat.</p>';
-            return;
-        }
+        container.innerHTML = `
+            <div class="sub-nav">
+                ${mainTabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+            </div>
+            <div id="sub-page-content"></div>
+        `;
 
-        const listHTML = sortedDays.map(([date, data]) => {
-            const dayDate = new Date(date);
-            const formattedDate = dayDate.toLocaleDateString('id-ID', {
-                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-            });
+        const renderMainTabContent = async (mainTabId) => {
+            appState.activeSubPage.set('jurnal', mainTabId);
+            const contentContainer = $('#sub-page-content');
+            contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
 
-            return `
-                <div class="card card-list-item" data-action="view-jurnal-harian" data-date="${date}">
-                    <div class="card-list-item-content">
-                        <div class="card-list-item-details">
-                            <h5 class="card-list-item-title">${formattedDate}</h5>
-                            <p class="card-list-item-subtitle">${data.workerCount} Pekerja Hadir</p>
-                        </div>
-                        <div class="card-list-item-amount-wrapper">
-                            <strong class="card-list-item-amount negative">${fmtIDR(data.totalUpah)}</strong>
-                            <p class="card-list-item-repayment-info">Total Beban Upah</p>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+            if (mainTabId === 'jurnal_absensi') {
+                // [BARU] Render sub-nav untuk Jurnal Absensi
+                _renderJurnalAbsensiTabs(contentContainer);
+            } else if (mainTabId === 'rekap_gaji') {
+                // [BARU] Render sub-nav untuk Rekap Gaji
+                _renderRekapGajiTabs(contentContainer);
+            }
+        };
 
-        container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
+        $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
+            $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            renderMainTabContent(e.currentTarget.dataset.tab);
+        }));
+
+        const lastMainTab = appState.activeSubPage.get('jurnal') || mainTabs[0].id;
+        if($('.sub-nav-item.active')) $('.sub-nav-item.active').classList.remove('active');
+        if($(`.sub-nav-item[data-tab="${lastMainTab}"]`)) $(`.sub-nav-item[data-tab="${lastMainTab}"]`).classList.add('active');
+        await renderMainTabContent(lastMainTab);
     }
 
     function _groupAttendanceByDay(records) {
@@ -4710,46 +5656,6 @@ async function handleManageUsers() {
             }
         });
         return grouped;
-    }
-
-    function _renderJurnalHarianDetailPage(dateStr) {
-        const container = $('.page-container');
-        const dayData = _groupAttendanceByDay(appState.attendanceRecords)[dateStr];
-        if (!dayData) {
-            container.innerHTML = '<p class="empty-state">Data untuk tanggal ini tidak ditemukan.</p>';
-            return;
-        }
-
-        const projectIds = [...new Set(dayData.records.map(rec => rec.projectId))];
-        const projectsInvolved = projectIds.map(id => appState.projects.find(p => p.id === id)).filter(Boolean);
-
-        const projectFiltersHTML = `
-            <button class="sub-nav-item active" data-project-id="all">Semua Proyek</button>
-            ${projectsInvolved.map(p => `<button class="sub-nav-item" data-project-id="${p.id}">${p.projectName}</button>`).join('')}
-        `;
-
-        container.innerHTML = `
-            <div class="jurnal-detail-header">
-                <div id="jurnal-detail-summary" class="card card-pad summary-card">
-                    </div>
-                <div id="jurnal-project-filters" class="category-sub-nav">
-                    ${projectFiltersHTML}
-                </div>
-            </div>
-            <div id="jurnal-pekerja-list" class="jurnal-pekerja-list">
-                </div>
-        `;
-
-        _renderJurnalPekerjaList(dayData.records, 'all');
-
-        $('#jurnal-project-filters').addEventListener('click', e => {
-            const btn = e.target.closest('.sub-nav-item');
-            if (btn) {
-                $('#jurnal-project-filters .active').classList.remove('active');
-                btn.classList.add('active');
-                _renderJurnalPekerjaList(dayData.records, btn.dataset.projectId);
-            }
-        });
     }
 
     function _renderJurnalPekerjaList(records, filterProjectId) {
@@ -4799,52 +5705,351 @@ async function handleManageUsers() {
         }).join('');
         listContainer.innerHTML = listHTML;
     }
+// [FUNGSI BARU] Untuk membuat kerangka sub-nav Rekap Gaji
+async function _renderRekapGajiTabs(container) {
+    const tabs = [
+        { id: 'buat_rekap', label: 'Buat Rekap Baru' },
+        { id: 'riwayat_rekap', label: 'Riwayat Rekap' }
+    ];
+    container.innerHTML = `
+        <div id="rekap-gaji-sub-nav" class="category-sub-nav" style="margin-top: 1rem;">
+             ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+        </div>
+        <div id="rekap-gaji-content"></div>
+    `;
+    
+    const renderSubTab = async (tabId) => {
+        const content = $('#rekap-gaji-content');
+        content.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+        if (tabId === 'buat_rekap') {
+            content.innerHTML = _getSalaryRecapHTML();
+            if(!isViewer()) {
+                $('#generate-recap-btn')?.addEventListener('click', () => {
+                    const startDate = $('#recap-start-date').value;
+                    const endDate = $('#recap-end-date').value;
+                    if (startDate && endDate) generateSalaryRecap(new Date(startDate), new Date(endDate));
+                    else toast('error', 'Silakan pilih rentang tanggal.');
+                });
+            } else {
+                 generateSalaryRecap(new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date());
+            }
+        } else if (tabId === 'riwayat_rekap') {
+            await _renderRiwayatRekapView(content);
+        }
+    };
+
+    $('#rekap-gaji-sub-nav').addEventListener('click', e => {
+        const btn = e.target.closest('.sub-nav-item');
+        if (btn) {
+            $('#rekap-gaji-sub-nav .active').classList.remove('active');
+            btn.classList.add('active');
+            renderSubTab(btn.dataset.tab);
+        }
+    });
+    await renderSubTab(tabs[0].id);
+}
+
+// [FUNGSI BARU] Untuk merender tampilan Riwayat Rekap
+async function _renderRiwayatRekapView(container) {
+    await fetchAndCacheData('bills', billsCol);
+    const salaryBills = appState.bills.filter(b => b.type === 'gaji').sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+
+    if (salaryBills.length === 0) {
+        container.innerHTML = '<p class="empty-state">Belum ada riwayat rekap gaji yang dibuat.</p>';
+        return;
+    }
+
+    const listHTML = salaryBills.map(bill => {
+        const date = bill.createdAt.toDate().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'});
+        const statusClass = bill.status === 'paid' ? 'positive' : 'negative';
+        const statusText = bill.status === 'paid' ? 'Lunas' : 'Belum Lunas';
+
+        return `
+             <div class="card card-list-item">
+                <div class="card-list-item-content">
+                    <div class="card-list-item-details">
+                        <h5 class="card-list-item-title">${bill.description}</h5>
+                        <p class="card-list-item-subtitle">Dibuat pada: ${date}</p>
+                    </div>
+                    <div class="card-list-item-amount-wrapper">
+                        <strong class="card-list-item-amount">${fmtIDR(bill.amount)}</strong>
+                         <span class="status-badge ${statusClass}" style="margin-top: 0.25rem;">${statusText}</span>
+                    </div>
+                </div>
+                ${isViewer() ? '' : `
+                    <div class="card-list-item-actions">
+                        <button class="btn-icon" data-action="cetak-kwitansi" data-id="${bill.id}" title="Cetak Kwitansi">
+                            <span class="material-symbols-outlined">receipt_long</span>
+                        </button>
+                        <button class="btn-icon" data-action="open-recap-actions" data-id="${bill.id}" title="Aksi Lainnya">
+                            <span class="material-symbols-outlined">more_vert</span>
+                        </button>
+                    </div>
+                    `}
+            </div>
+        `;
+    }).join('');
+    container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
+}
+
+// [FUNGSI BARU] Fungsi utama untuk menangani pembuatan kwitansi
+async function handleCetakKwitansi(billId) {
+    toast('syncing', 'Mempersiapkan kwitansi...');
+
+    // Ambil data yang diperlukan dari appState
+    const bill = appState.bills.find(b => b.id === billId);
+    if (!bill) {
+        toast('error', 'Data tagihan gaji tidak ditemukan.');
+        return;
+    }
+    await fetchAndCacheData('workers', workersCol, 'workerName');
+    const worker = appState.workers.find(w => w.id === bill.workerId);
+    if (!worker) {
+        toast('error', 'Data pekerja tidak ditemukan.');
+        return;
+    }
+
+    const kwitansiData = {
+        nomor: `KW-G-${bill.id.substring(0, 5).toUpperCase()}`,
+        tanggal: bill.paidAt ? bill.paidAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+        namaPenerima: worker.workerName,
+        jumlah: bill.amount,
+        deskripsi: bill.description
+    };
+
+    // Buat konten modal dengan HTML kwitansi dan tombol download
+    const modalContent = `
+        <div id="kwitansi-printable-area">
+            ${_getKwitansiHTML(kwitansiData)}
+        </div>
+        <div class="modal-footer" style="margin-top: 1rem;">
+            <button class="btn btn-secondary" data-close-modal>Tutup</button>
+            <button id="download-kwitansi-btn" class="btn btn-primary">
+                <span class="material-symbols-outlined">download</span> Unduh PDF
+            </button>
+        </div>
+    `;
+
+    // Tampilkan modal
+    createModal('dataDetail', { title: 'Pratinjau Kwitansi', content: modalContent });
+    hideToast();
+
+    // Tambahkan event listener untuk tombol download setelah modal dibuat
+    $('#download-kwitansi-btn').addEventListener('click', () => {
+        _downloadKwitansiAsPDF(kwitansiData);
+    });
+}
+
+// [FUNGSI BARU] Fungsi untuk menghasilkan string HTML dari kwitansi
+function _getKwitansiHTML(data) {
+    // Fungsi sederhana untuk mengubah angka menjadi format terbilang
+    // Ini adalah versi sederhana, untuk yang lebih kompleks memerlukan library khusus
+    const terbilang = (angka) => {
+        const bilangan = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
+        if (angka < 12) {
+            return bilangan[angka];
+        } else if (angka < 20) {
+            return terbilang(angka - 10) + " Belas";
+        } else if (angka < 100) {
+            return terbilang(Math.floor(angka / 10)) + " Puluh " + terbilang(angka % 10);
+        } else if (angka < 200) {
+            return "Seratus " + terbilang(angka - 100);
+        } else if (angka < 1000) {
+            return terbilang(Math.floor(angka / 1000)) + " Ratus " + terbilang(angka % 100);
+        } else if (angka < 2000) {
+            return "Seribu " + terbilang(angka - 1000);
+        } else if (angka < 1000000) {
+            return terbilang(Math.floor(angka / 1000)) + " Ribu " + terbilang(angka % 1000);
+        } else if (angka < 1000000000) {
+            return terbilang(Math.floor(angka/1000000)) + " Juta " + terbilang(angka % 1000000);
+        }
+        // Dan seterusnya untuk Miliar, Triliun...
+        return "";
+    };
+
+    const jumlahTerbilang = terbilang(data.jumlah).trim() + " Rupiah";
+
+    return `
+        <div class="kwitansi-container">
+            <div class="kwitansi-header">
+                <h3>KWITANSI</h3>
+                <div class="kwitansi-nomor">No: ${data.nomor}</div>
+            </div>
+            <div class="kwitansi-body">
+                <dl>
+                    <div><dt>Telah diterima dari</dt><dd>: CV. ALAM BERKAH ABADI</dd></div>
+                    <div><dt>Uang Sejumlah</dt><dd class="terbilang">: ${jumlahTerbilang}</dd></div>
+                    <div><dt>Untuk Pembayaran</dt><dd>: ${data.deskripsi}</dd></div>
+                </dl>
+            </div>
+            <div class="kwitansi-footer">
+                <div class="kwitansi-jumlah-box">
+                    ${fmtIDR(data.jumlah)}
+                </div>
+                <div class="kwitansi-ttd">
+                    <p>Cijiwa, ${data.tanggal}</p>
+                    <p class="penerima">Penerima,</p>
+                    <p class="nama-penerima">${data.namaPenerima}</p>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+    async function _renderJurnalAbsensiTabs(container) {
+        const tabs = [
+            { id: 'harian', label: 'Harian' },
+            { id: 'per_pekerja', label: 'Per Pekerja' }
+        ];
+        container.innerHTML = `
+            <div id="jurnal-absensi-sub-nav" class="category-sub-nav" style="margin-top: 1rem;">
+                 ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+            </div>
+            <div id="jurnal-absensi-content"></div>
+        `;
+
+        const renderSubTab = async (tabId) => {
+            const content = $('#jurnal-absensi-content');
+            content.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+            if (tabId === 'harian') {
+                await _renderJurnalHarianView(content);
+            } else if (tabId === 'per_pekerja') {
+                await _renderJurnalPerPekerjaView(content);
+            }
+        };
+
+        $('#jurnal-absensi-sub-nav').addEventListener('click', e => {
+            const btn = e.target.closest('.sub-nav-item');
+            if (btn) {
+                $('#jurnal-absensi-sub-nav .active').classList.remove('active');
+                btn.classList.add('active');
+                renderSubTab(btn.dataset.tab);
+            }
+        });
+
+        await renderSubTab(tabs[0].id); // Render tab default
+    }
+
+    // [FUNGSI BARU] Untuk merender tampilan Jurnal Harian (daftar kartu per tanggal)
+    async function _renderJurnalHarianView(container) {
+        await Promise.all([
+            fetchAndCacheData('attendanceRecords', attendanceRecordsCol, 'date')
+        ]);
+        const groupedByDay = _groupAttendanceByDay(appState.attendanceRecords);
+        const sortedDays = Object.entries(groupedByDay).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+
+        if (sortedDays.length === 0) {
+            container.innerHTML = '<p class="empty-state">Belum ada data absensi yang tercatat.</p>';
+            return;
+        }
+        const listHTML = sortedDays.map(([date, data]) => {
+            const dayDate = new Date(date);
+            const formattedDate = dayDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
+            return `
+                <div class="card card-list-item" data-action="view-jurnal-harian" data-date="${date}">
+                    <div class="card-list-item-content">
+                        <div class="card-list-item-details">
+                            <h5 class="card-list-item-title">${formattedDate}</h5>
+                            <p class="card-list-item-subtitle">${data.workerCount} Pekerja Hadir</p>
+                        </div>
+                        <div class="card-list-item-amount-wrapper">
+                            <strong class="card-list-item-amount negative">${fmtIDR(data.totalUpah)}</strong>
+                            <p class="card-list-item-repayment-info">Total Beban Upah</p>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+        container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
+    }
+
+    // [FUNGSI BARU] Untuk merender tampilan Jurnal Per Pekerja (daftar kartu per pekerja)
+    async function _renderJurnalPerPekerjaView(container) {
+        await Promise.all([
+            fetchAndCacheData('workers', workersCol, 'workerName'),
+            fetchAndCacheData('professions', professionsCol, 'professionName')
+        ]);
+        const activeWorkers = appState.workers.filter(w => w.status === 'active');
+
+        if (activeWorkers.length === 0) {
+            container.innerHTML = '<p class="empty-state">Belum ada data pekerja aktif.</p>';
+            return;
+        }
+
+        const listHTML = activeWorkers.map(worker => {
+            const profession = appState.professions.find(p => p.id === worker.professionId)?.professionName || 'Tanpa Profesi';
+            return `
+                 <div class="card card-list-item" data-action="view-worker-recap" data-worker-id="${worker.id}">
+                    <div class="card-list-item-content">
+                        <div class="card-list-item-details">
+                            <h5 class="card-list-item-title">${worker.workerName}</h5>
+                            <p class="card-list-item-subtitle">${profession}</p>
+                        </div>
+                         <div class="card-list-item-amount-wrapper">
+                             <span class="material-symbols-outlined" style="font-size: 2rem; color: var(--text-muted);">chevron_right</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
+    }
         // =======================================================
     //         HALAMAN LAPORAN & LOG
     // =======================================================
-    async function renderLaporanPage() {
-        const container = $('.page-container');
-        if (typeof Chart === 'undefined') {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
-            document.head.appendChild(script);
-            await new Promise(resolve => script.onload = resolve);
-        }
-    
-        const tabs = [{id:'laba_rugi', label:'Laba Rugi'}, {id:'arus_kas', label:'Arus Kas'}, {id:'anggaran', label:'Anggaran'}, {id:'rekapan', label:'Rekapan'}];
-        container.innerHTML = `
-            <div class="card card-pad" style="margin-bottom: 1.5rem;">
-                <h5 class="section-title-owner" style="margin-top:0;">Ringkasan Keuangan</h5>
-                <div style="height: 220px; position: relative;"><canvas id="financial-summary-chart"></canvas></div>
-            </div>
-            <div class="sub-nav">
-                ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
-            </div>
-            <div id="sub-page-content"></div>
-        `;
-    
-        const renderTabContent = async (tabId) => {
-            appState.activeSubPage.set('laporan', tabId);
-            const contentContainer = $('#sub-page-content');
-            contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
-            
-            if (tabId === 'laba_rugi') await _renderLaporanLabaRugi(contentContainer);
-            else if (tabId === 'arus_kas') await _renderLaporanArusKas(contentContainer);
-            else if (tabId === 'anggaran') await _renderLaporanAnggaran(contentContainer);
-            else if (tabId === 'rekapan') await _renderLaporanRekapan(contentContainer);
-        };
-    
-        $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
-            $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            renderTabContent(e.currentTarget.dataset.tab);
-        }));
-        
-        const lastSubPage = appState.activeSubPage.get('laporan') || tabs[0].id;
-        $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
-        await renderTabContent(lastSubPage);
-        _renderFinancialSummaryChart(); 
+async function renderLaporanPage() {
+    const container = $('.page-container');
+    if (typeof Chart === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+        document.head.appendChild(script);
+        await new Promise(resolve => script.onload = resolve);
     }
+
+    // [MODIFIKASI] Menambahkan tab baru "Upah Pekerja" dan "Material Supplier"
+    const tabs = [
+        {id:'laba_rugi', label:'Laba Rugi'}, 
+        {id:'arus_kas', label:'Arus Kas'}, 
+        {id:'upah_pekerja', label:'Upah Pekerja'},
+        {id:'material_supplier', label:'Material Supplier'},
+        {id:'analisis_rinci', label:'Analisis Rinci'},
+        {id:'rekapan', label:'Rekapan'}
+    ];
+    container.innerHTML = `
+        <div class="card card-pad" style="margin-bottom: 1.5rem;">
+            <h5 class="section-title-owner" style="margin-top:0;">Ringkasan Keuangan</h5>
+            <div style="height: 220px; position: relative;"><canvas id="financial-summary-chart"></canvas></div>
+        </div>
+        <div class="sub-nav">
+            ${tabs.map((tab, index) => `<button class="sub-nav-item ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+        </div>
+        <div id="sub-page-content"></div>
+    `;
+
+    const renderTabContent = async (tabId) => {
+        appState.activeSubPage.set('laporan', tabId);
+        const contentContainer = $('#sub-page-content');
+        contentContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+        
+        if (tabId === 'laba_rugi') await _renderLaporanLabaRugi(contentContainer);
+        else if (tabId === 'arus_kas') await _renderLaporanArusKas(contentContainer);
+        else if (tabId === 'anggaran') await _renderLaporanAnggaran(contentContainer);
+        else if (tabId === 'rekapan') await _renderLaporanRekapan(contentContainer);
+        else if (tabId === 'analisis_rinci') await _renderAnalisisRinci(contentContainer);
+        else if (tabId === 'upah_pekerja') await _renderLaporanUpahPekerja(contentContainer);
+        else if (tabId === 'material_supplier') await _renderLaporanMaterialSupplier(contentContainer);
+    };
+
+    $$('.sub-nav-item').forEach(btn => btn.addEventListener('click', (e) => {
+        $$('.sub-nav-item').forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        renderTabContent(e.currentTarget.dataset.tab);
+    }));
+    
+    const lastSubPage = appState.activeSubPage.get('laporan') || tabs[0].id;
+    $(`.sub-nav-item[data-tab="${lastSubPage}"]`).classList.add('active');
+    await renderTabContent(lastSubPage);
+    _renderFinancialSummaryChart(); 
+}
 
     async function _renderFinancialSummaryChart() {
         const canvas = $('#financial-summary-chart');
@@ -4991,6 +6196,198 @@ async function handleManageUsers() {
         </div>`;
     }
 
+    // [FUNGSI BARU] Untuk merender UI tab Analisis Rinci
+    async function _renderAnalisisRinci(container) {
+        const today = new Date();
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+        const todayStr = today.toISOString().slice(0, 10);
+    
+        const reportTypeOptions = [
+            { value: '', text: '-- Pilih Jenis --' },
+            { value: 'supplier_material', text: 'Tagihan per Supplier Material' },
+            { value: 'worker_wage', text: 'Upah per Pekerja' }
+        ];
+    
+        container.innerHTML = `
+            <div class="card card-pad">
+                <h5 class="report-title">Analisis Laporan Rinci</h5>
+                
+                ${createMasterDataSelect('analisis-report-type', 'Pilih Jenis Laporan', reportTypeOptions, '')}
+    
+                <div id="analisis-dynamic-filter-container"></div>
+    
+                <div class="rekap-filters">
+                    <div class="form-group">
+                        <label>Dari Tanggal</label>
+                        <input type="date" id="analisis-start-date" value="${firstDayOfMonth}">
+                    </div>
+                     <div class="form-group">
+                        <label>Sampai Tanggal</label>
+                        <input type="date" id="analisis-end-date" value="${todayStr}">
+                    </div>
+                </div>
+                <div class="rekap-actions" style="margin-top:1rem;">
+                    <button id="generate-analisis-pdf-btn" class="btn btn-primary">
+                        <span class="material-symbols-outlined">picture_as_pdf</span> Buat Laporan PDF
+                    </button>
+                </div>
+            </div>
+        `;
+    
+        // Inisialisasi custom select yang baru dibuat
+        _initCustomSelects(container);
+    
+        // Listener untuk mengubah filter dinamis, sekarang menargetkan input tersembunyi
+        $('#analisis-report-type').addEventListener('change', (e) => {
+            _renderDynamicFilters(e.target.value);
+        });
+    
+        $('#generate-analisis-pdf-btn').addEventListener('click', _generateAnalisisRinciPDF);
+    }
+    
+    async function _renderDynamicFilters(reportType) {
+        const container = $('#analisis-dynamic-filter-container');
+        container.innerHTML = ''; // Kosongkan dulu
+    
+        if (reportType === 'supplier_material') {
+            await fetchAndCacheData('suppliers', suppliersCol, 'supplierName');
+            const supplierOptions = appState.suppliers
+                .filter(s => s.category === 'Material')
+                .map(s => ({ value: s.id, text: s.supplierName }));
+            container.innerHTML = createMasterDataSelect('analisis-subject-id', 'Pilih Supplier', supplierOptions, supplierOptions[0]?.id || '');
+        } else if (reportType === 'worker_wage') {
+            await fetchAndCacheData('workers', workersCol, 'workerName');
+            const workerOptions = appState.workers
+                .filter(w => w.status === 'active')
+                .map(w => ({ value: w.id, text: w.workerName }));
+            container.innerHTML = createMasterDataSelect('analisis-subject-id', 'Pilih Pekerja', workerOptions, workerOptions[0]?.id || '');
+        }
+    
+        // Inisialisasi custom select yang baru saja ditambahkan ke DOM
+        _initCustomSelects(container);
+    }
+    
+// [GANTI SELURUH FUNGSI INI]
+async function _generateAnalisisRinciPDF() {
+    const reportType = $('#analisis-report-type').value;
+    const subjectId = $('#analisis-subject-id')?.value;
+    const startDate = new Date($('#analisis-start-date').value);
+    const endDate = new Date($('#analisis-end-date').value);
+    endDate.setHours(23, 59, 59, 999);
+
+    if (!reportType || !subjectId) {
+        toast('error', 'Silakan pilih jenis laporan dan subjeknya terlebih dahulu.');
+        return;
+    }
+
+    toast('syncing', 'Mengumpulkan data laporan...');
+
+    // [PERBAIKAN] Tambahkan baris ini untuk memastikan data terbaru selalu dimuat
+    await Promise.all([
+        fetchAndCacheData('bills', billsCol),
+        fetchAndCacheData('expenses', expensesCol),
+        fetchAndCacheData('suppliers', suppliersCol, 'supplierName'),
+        fetchAndCacheData('workers', workersCol, 'workerName')
+    ]);
+
+    let reportData = {};
+    let callGenerator = false; // Penanda apakah PDF harus dibuat
+
+    if (reportType === 'supplier_material') {
+        const supplier = appState.suppliers.find(s => s.id === subjectId);
+        const allBills = appState.bills.filter(bill => {
+            const expense = appState.expenses.find(e => e.id === bill.expenseId);
+            return expense && expense.supplierId === subjectId &&
+                   bill.createdAt.toDate() >= startDate &&
+                   bill.createdAt.toDate() <= endDate;
+        });
+
+        if (allBills.length > 0) {
+            callGenerator = true;
+            const lunasBills = allBills.filter(b => b.status === 'paid').sort((a, b) => a.createdAt.toDate() - b.createdAt.toDate());
+            const belumLunasBills = allBills.filter(b => b.status !== 'paid').sort((a, b) => a.createdAt.toDate() - b.createdAt.toDate());
+            const totalLunas = lunasBills.reduce((sum, bill) => sum + bill.amount, 0);
+            const totalBelumLunas = belumLunasBills.reduce((sum, bill) => sum + bill.amount, 0);
+            const grandTotal = totalLunas + totalBelumLunas;
+
+            reportData = {
+                title: `Laporan Tagihan Supplier`,
+                subject: supplier.supplierName,
+                dateRange: `${startDate.toLocaleDateString('id-ID')} - ${endDate.toLocaleDateString('id-ID')}`,
+                lunasData: lunasBills.map(bill => [bill.createdAt.toDate().toLocaleDateString('id-ID'), bill.description, fmtIDR(bill.amount), 'Lunas']),
+                totalLunas: totalLunas,
+                belumLunasData: belumLunasBills.map(bill => [bill.createdAt.toDate().toLocaleDateString('id-ID'), bill.description, fmtIDR(bill.amount), 'Belum Lunas']),
+                totalBelumLunas: totalBelumLunas,
+                grandTotal: grandTotal
+            };
+        }
+
+    } else if (reportType === 'worker_wage') {
+        // [PERUBAHAN TOTAL] Logika sekarang mengambil dari absensi harian
+        await fetchAndCacheData('attendanceRecords', attendanceRecordsCol); // Pastikan data absensi ada
+        
+        const worker = appState.workers.find(w => w.id === subjectId);
+
+        // 1. Ambil semua catatan absensi yang relevan
+        const allRecords = appState.attendanceRecords.filter(rec =>
+            rec.workerId === subjectId &&
+            rec.date.toDate() >= startDate &&
+            rec.date.toDate() <= endDate &&
+            rec.status === 'completed' // Hanya yang sudah selesai kerja
+        );
+
+        // 2. Pisahkan dan Urutkan berdasarkan tanggal
+        const lunasRecords = allRecords
+            .filter(rec => rec.isPaid)
+            .sort((a, b) => a.date.toDate() - b.date.toDate());
+
+        const belumLunasRecords = allRecords
+            .filter(rec => !rec.isPaid)
+            .sort((a, b) => a.date.toDate() - b.date.toDate());
+            
+        // 3. Hitung semua total
+        const totalLunas = lunasRecords.reduce((sum, rec) => sum + rec.totalPay, 0);
+        const totalBelumLunas = belumLunasRecords.reduce((sum, rec) => sum + rec.totalPay, 0);
+        const grandTotal = totalLunas + totalBelumLunas;
+
+        // 4. Siapkan data untuk dikirim ke pembuat PDF
+        const headers = ['Tanggal Masuk', 'Proyek', 'Nominal Gaji Harian', 'Status'];
+        const projectData = appState.projects.reduce((map, p) => map.set(p.id, p.projectName), new Map());
+
+        if (allRecords.length > 0) {
+            callGenerator = true;
+            reportData = {
+                title: `Laporan Rinci Upah`,
+                subject: worker.workerName,
+                dateRange: `${startDate.toLocaleDateString('id-ID')} - ${endDate.toLocaleDateString('id-ID')}`,
+                headers: headers,
+                lunasData: lunasRecords.map(rec => [
+                    rec.date.toDate().toLocaleDateString('id-ID'),
+                    projectData.get(rec.projectId) || 'N/A',
+                    fmtIDR(rec.totalPay),
+                    'Lunas'
+                ]),
+                totalLunas: totalLunas,
+                belumLunasData: belumLunasRecords.map(rec => [
+                    rec.date.toDate().toLocaleDateString('id-ID'),
+                    projectData.get(rec.projectId) || 'N/A',
+                    fmtIDR(rec.totalPay),
+                    'Belum Lunas'
+                ]),
+                totalBelumLunas: totalBelumLunas,
+                grandTotal: grandTotal
+            };
+        }
+    }
+
+    // Hanya panggil pembuat PDF jika ada data yang ditemukan
+    if (callGenerator) {
+        _createDetailedStatementPDF(reportData);
+    } else {
+        toast('error', 'Tidak ada data rincian yang ditemukan untuk periode dan subjek yang dipilih.');
+    }
+}
+
     async function _renderLaporanRekapan(container) {
         const projectOptions = [{value:'all', text: 'Semua Proyek'}, ...appState.projects.map(p => ({value: p.id, text: p.projectName}))];
         const today = new Date();
@@ -5082,125 +6479,537 @@ async function handleManageUsers() {
         `;
         container.innerHTML = tableHTML;
     }
+// [FUNGSI BARU] Untuk menampilkan UI filter laporan upah pekerja
+async function _renderLaporanUpahPekerja(container) {
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const todayStr = today.toISOString().slice(0, 10);
 
-    async function _handleDownloadReport(format) {
-        const reportArea = $('#rekapan-results-container');
-        if (!reportArea.querySelector('table')) {
-            toast('error', 'Silakan tampilkan laporan terlebih dahulu.'); return;
-        }
-        
-        const rows = Array.from(reportArea.querySelectorAll('tbody tr'));
-        const foot = Array.from(reportArea.querySelectorAll('tfoot tr'));
-        if(rows.length === 0) {
-            toast('error', 'Tidak ada data untuk diunduh.'); return;
-        }
+    container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Rekapan Upah Pekerja</h5>
+            <div class="rekap-filters">
+                <div class="form-group">
+                    <label>Dari Tanggal</label>
+                    <input type="date" id="upah-start-date" value="${firstDayOfMonth}">
+                </div>
+                 <div class="form-group">
+                    <label>Sampai Tanggal</label>
+                    <input type="date" id="upah-end-date" value="${todayStr}">
+                </div>
+            </div>
+            <div class="rekap-actions">
+                <button id="generate-upah-btn" class="btn btn-primary"><span class="material-symbols-outlined">summarize</span> Tampilkan</button>
+                <button data-action="download-csv" data-report-type="upah_pekerja" class="btn btn-secondary"><span class="material-symbols-outlined">description</span> Unduh CSV</button>
+                <button data-action="download-report" data-report-type="upah_pekerja" class="btn btn-secondary"><span class="material-symbols-outlined">picture_as_pdf</span> Unduh PDF</button>
+            </div>
+        </div>
+        <div id="upah-results-container" style="margin-top: 1.5rem;"></div>
+    `;
     
-        const headers = ["Tanggal", "Deskripsi", "Pemasukan", "Pengeluaran", "Saldo"];
-        
-        const data = rows.map(row => {
-            const cols = row.querySelectorAll('td');
-            if (cols.length < 5) return ['', '', '', '', '']; 
-            return Array.from(cols).map(col => `"${(col.textContent || '').trim()}"`);
+    $('#generate-upah-btn').addEventListener('click', _generateLaporanUpahPekerja);
+}
+// [GANTI SELURUH FUNGSI INI]
+function _createDetailedStatementPDF(data) {
+    toast('syncing', 'Membuat Laporan Rinci...');
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    let lastY = 0;
+
+    // --- Konfigurasi Desain Tabel ---
+    const tableConfig = {
+        theme: 'plain',
+        styles: { fontSize: 9, cellPadding: 2.5 },
+        headStyles: { fontStyle: 'bold', textColor: 0 },
+        footStyles: { fontStyle: 'bold', textColor: 0 },
+        didDrawCell: (data) => {
+            if (data.section === 'head' && data.row.index === 0) {
+                pdf.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
+            }
+            if (data.section === 'foot' && data.row.index === 0) {
+                pdf.line(data.cell.x, data.cell.y, data.cell.x + data.cell.width, data.cell.y);
+            }
+        }
+    };
+
+    // --- Header Dokumen ---
+    const logoUrl ='https://i.ibb.co.com/XZ5s1WN1/logo-cv-aba.png';
+    if (logoUrl) pdf.addImage(logoUrl, 'PNG', 14, 12, 25, 25);
+    pdf.setFontSize(18).setFont(undefined, 'bold');
+    pdf.text('CV. ALAM BERKAH ABADI', 200, 20, { align: 'right' });
+    pdf.setFontSize(10).setFont(undefined, 'normal');
+    pdf.text(data.title, 200, 26, { align: 'right' });
+    pdf.text(data.subject, 200, 31, { align: 'right' });
+    pdf.text(`Periode: ${data.dateRange}`, 200, 36, { align: 'right' });
+    lastY = 45;
+
+    // --- Tabel Lunas ---
+    if (data.lunasData.length > 0) {
+        pdf.setFontSize(11).setFont(undefined, 'bold');
+        pdf.text('RINCIAN LUNAS', 14, lastY);
+        pdf.autoTable({
+            ...tableConfig,
+            head: [data.headers], // Gunakan header dari data
+            body: data.lunasData,
+            foot: [['', 'Total Lunas', fmtIDR(data.totalLunas), '']],
+            startY: lastY + 3
         });
-    
-        if (foot.length > 0) {
-            foot.forEach(row => {
-                const cols = row.querySelectorAll('td');
-                if (cols.length === 4 && cols[0].getAttribute('colspan') === '2') {
-                     data.push([
-                        `"${(cols[0].textContent || '').trim()}"`, 
-                        '""', 
-                        `"${(cols[1].textContent || '').trim()}"`,
-                        `"${(cols[2].textContent || '').trim()}"`,
-                        `"${(cols[3].textContent || '').trim()}"`
-                    ]);
+        lastY = pdf.autoTable.previous.finalY;
+    }
+
+    // --- Tabel Belum Lunas ---
+    if (data.belumLunasData.length > 0) {
+        pdf.setFontSize(11).setFont(undefined, 'bold');
+        pdf.text('RINCIAN BELUM LUNAS', 14, lastY + 10);
+        pdf.autoTable({
+            ...tableConfig,
+            head: [data.headers], // Gunakan header dari data
+            body: data.belumLunasData,
+            foot: [['', 'Total Belum Lunas', fmtIDR(data.totalBelumLunas), '']],
+            startY: lastY + 13
+        });
+        lastY = pdf.autoTable.previous.finalY;
+    }
+
+    // --- Grand Total ---
+    if (data.grandTotal > 0) {
+        pdf.autoTable({
+            startY: lastY + 5,
+            theme: 'plain',
+            body: [['', 'GRAND TOTAL', fmtIDR(data.grandTotal), '']],
+            footStyles: { fontStyle: 'bold', fontSize: 11, halign: 'right' },
+            didDrawCell: (data) => {
+                if (data.section === 'body' && data.row.index === 0) {
+                    pdf.line(data.cell.x, data.cell.y, data.cell.x + data.cell.width, data.cell.y);
                 }
+            }
+        });
+    }
+
+    const filename = `Laporan-${data.title}-${data.subject}.pdf`;
+    pdf.save(filename);
+    toast('success', 'PDF Laporan Rinci berhasil dibuat!');
+}
+
+function _createPdfTemplate(pdf, reportConfig) {
+    const { title, summaryData, tableHeaders, tableBody, tableFoot, columnStyles, tableHeadersLunas, tableBodyLunas, tableHeadersBelumLunas, tableBodyBelumLunas } = reportConfig;
+    const totalPagesExp = '{total_pages_count_string}';
+    const logoUrl = 'https://i.ibb.co/XZ5s1WN1/logo-cv-aba.png';
+    let lastY = 0;
+
+    const mainTableConfig = {
+        theme: 'grid',
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+        footStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: columnStyles || {}
+    };
+
+    // [PERBAIKAN KUNCI] Fungsi untuk menggambar header dan footer halaman
+    const didDrawPage = function (data) {
+        if (data.pageNumber === 1) {
+            if (logoUrl) { try { pdf.addImage(logoUrl, 'PNG', 15, 8, 20, 20); } catch (e) {} }
+            pdf.setFontSize(18); pdf.setTextColor(44, 62, 80);
+            pdf.text('CV. ALAM BERKAH ABADI', 40, 18);
+            pdf.setFontSize(12); pdf.text(title, 40, 25);
+            pdf.setDrawColor(200, 200, 200);
+            pdf.line(14, 32, pdf.internal.pageSize.width - 14, 32);
+
+            if (summaryData && summaryData.length > 0) {
+                pdf.autoTable({
+                    startY: 38, body: summaryData, theme: 'plain',
+                    styles: { fontStyle: 'bold', fontSize: 9 },
+                    columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 5 }, 2: { halign: 'left' } }
+                });
+                lastY = pdf.autoTable.previous.finalY;
+            }
+        }
+        const pageCount = pdf.internal.getNumberOfPages();
+        pdf.setFontSize(8); pdf.setTextColor(150, 150, 150);
+        pdf.text(`Halaman ${data.pageNumber} dari ${totalPagesExp}`, 14, pdf.internal.pageSize.height - 10);
+        const reportDate = new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
+        pdf.text(`Dicetak: ${reportDate}`, pdf.internal.pageSize.width - 14, pdf.internal.pageSize.height - 10, { align: 'right' });
+    };
+
+    // [LOGIKA BARU] Gabungkan `didDrawPage` dengan tabel pertama yang akan digambar
+    let firstTableDrawn = false;
+    const drawTable = (config) => {
+        if (!firstTableDrawn) {
+            // Jika ini tabel pertama, tambahkan hook didDrawPage
+            config.didDrawPage = didDrawPage;
+            // Tentukan posisi Y awal berdasarkan ada atau tidaknya summary
+            config.startY = lastY > 0 ? lastY + 5 : 38; 
+            firstTableDrawn = true;
+        }
+        pdf.autoTable(config);
+        lastY = pdf.autoTable.previous.finalY;
+    };
+
+    // Gambar tabel-tabel secara berurutan
+    if (tableBody && tableBody.length > 0) {
+        drawTable({ ...mainTableConfig, head: [tableHeaders], body: tableBody, foot: tableFoot && tableFoot.length > 0 ? [tableFoot] : [] });
+    }
+
+    if (tableBodyLunas && tableBodyLunas.length > 0) {
+        pdf.setFontSize(10); pdf.setTextColor(44, 62, 80);
+        pdf.text('Rincian Lunas', 14, lastY + 8);
+        drawTable({ ...mainTableConfig, head: [tableHeadersLunas], body: tableBodyLunas, startY: lastY + 10 });
+    }
+
+    if (tableBodyBelumLunas && tableBodyBelumLunas.length > 0) {
+        pdf.setFontSize(10); pdf.setTextColor(44, 62, 80);
+        pdf.text('Rincian Belum Lunas', 14, lastY + 8);
+        drawTable({ ...mainTableConfig, head: [tableHeadersBelumLunas], body: tableBodyBelumLunas, startY: lastY + 10 });
+    }
+
+    if (typeof pdf.putTotalPages === 'function') {
+        pdf.putTotalPages(totalPagesExp);
+    }
+    return pdf;
+}
+
+function _generateReportPDF(reportConfig) {
+    // [PERBAIKAN] Cek semua kemungkinan sumber data tabel
+    const hasData = reportConfig && (
+        (reportConfig.tableBody && reportConfig.tableBody.length > 0) ||
+        (reportConfig.tableBodyLunas && reportConfig.tableBodyLunas.length > 0) ||
+        (reportConfig.tableBodyBelumLunas && reportConfig.tableBodyBelumLunas.length > 0)
+    );
+
+    if (!hasData) {
+        toast('error', 'Tidak ada data rincian untuk dibuat PDF.');
+        return;
+    }
+    
+    toast('syncing', 'Membuat PDF profesional...');
+    try {
+        const { jsPDF } = window.jspdf;
+        let pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const reportDate = new Date().toLocaleDateString('id-ID');
+        const filename = `${reportConfig.title.replace(/ /g, '-')}-${reportDate}.pdf`;
+        pdf = _createPdfTemplate(pdf, reportConfig);
+        pdf.save(filename);
+        toast('success', 'PDF profesional berhasil dibuat!');
+    } catch (error) {
+        console.error("Gagal membuat PDF Laporan:", error);
+        toast('error', 'Terjadi kesalahan saat membuat PDF.');
+    }
+}
+async function _generateLaporanUpahPekerja() {
+    const container = $('#upah-results-container');
+    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+    const startDate = new Date($('#upah-start-date').value);
+    const endDate = new Date($('#upah-end-date').value);
+    endDate.setHours(23, 59, 59, 999);
+
+    await Promise.all([
+        fetchAndCacheData('workers', workersCol, 'workerName'),
+        fetchAndCacheData('projects', projectsCol, 'projectName')
+    ]);
+
+    const q = query(attendanceRecordsCol, 
+        where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date', 'desc')
+    );
+    const snap = await getDocs(q);
+    const records = snap.docs.map(d => d.data());
+
+    if (records.length === 0) {
+        container.innerHTML = `<p class="empty-state">Tidak ada data absensi pada periode yang dipilih.</p>`;
+        return;
+    }
+
+    // [BARU] Siapkan data mentah untuk PDF
+    const pdfDataRows = records.map(rec => {
+        const worker = appState.workers.find(w => w.id === rec.workerId);
+        const project = appState.projects.find(p => p.id === rec.projectId);
+        let statusText = 'N/A';
+        if (rec.type === 'manual') {
+            if (rec.attendanceStatus === 'full_day') statusText = 'Hadir';
+            else if (rec.attendanceStatus === 'half_day') statusText = '1/2 Hari';
+            else statusText = 'Absen';
+        } else {
+            statusText = `${rec.workHours?.toFixed(1) || 0} jam`;
+        }
+        return [
+            rec.date.toDate().toLocaleDateString('id-ID'),
+            worker?.workerName || 'N/A',
+            project?.projectName || 'N/A',
+            statusText,
+            fmtIDR(rec.totalPay || 0),
+            rec.isPaid ? 'Lunas' : 'Belum Dibayar'
+        ];
+    });
+    // Simpan data PDF ke elemen agar bisa diambil oleh tombol unduh
+    container.dataset.pdfData = JSON.stringify(pdfDataRows);
+    
+    // Tampilkan tabel HTML seperti biasa
+    const tableHTML = `
+        <div class="card card-pad" id="upah-printable-area">
+            <h5 class="report-title">Rincian Upah Periode ${startDate.toLocaleDateString('id-ID')} - ${endDate.toLocaleDateString('id-ID')}</h5>
+            <div class="recap-table-wrapper">
+                <table class="recap-table">
+                    <thead><tr><th>Tanggal</th><th>Nama Pekerja</th><th>Proyek</th><th>Status</th><th>Upah</th><th>Status Bayar</th></tr></thead>
+                    <tbody>
+                        ${records.map(rec => {
+                            const worker = appState.workers.find(w => w.id === rec.workerId);
+                            const project = appState.projects.find(p => p.id === rec.projectId);
+                            let statusText = 'N/A';
+                            if (rec.type === 'manual') {
+                                if (rec.attendanceStatus === 'full_day') statusText = 'Hadir';
+                                else if (rec.attendanceStatus === 'half_day') statusText = '1/2 Hari';
+                                else statusText = 'Absen';
+                            } else {
+                                statusText = `${rec.workHours?.toFixed(1) || 0} jam`;
+                            }
+                            return `<tr><td>${rec.date.toDate().toLocaleDateString('id-ID')}</td><td>${worker?.workerName || 'N/A'}</td><td>${project?.projectName || 'N/A'}</td><td>${statusText}</td><td>${fmtIDR(rec.totalPay || 0)}</td><td>${rec.isPaid ? 'Lunas' : 'Belum'}</td></tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    container.innerHTML = tableHTML;
+}
+
+    async function _renderLaporanMaterialSupplier(container) {
+    await fetchAndCacheData('suppliers', suppliersCol, 'supplierName');
+    const supplierOptions = [{value:'all', text: 'Semua Supplier'}, ...appState.suppliers.filter(s=> s.category === 'Material').map(s => ({value: s.id, text: s.supplierName}))];
+    
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const todayStr = today.toISOString().slice(0, 10);
+
+    container.innerHTML = `
+        <div class="card card-pad">
+            <h5 class="report-title">Rekapan Material per Supplier</h5>
+            <div class="recap-filters">
+                ${createMasterDataSelect('material-supplier-id', 'Supplier', supplierOptions, 'all')}
+                <div class="form-group">
+                    <label>Dari Tanggal</label>
+                    <input type="date" id="material-start-date" value="${firstDayOfMonth}">
+                </div>
+                 <div class="form-group">
+                    <label>Sampai Tanggal</label>
+                    <input type="date" id="material-end-date" value="${todayStr}">
+                </div>
+            </div>
+            <div class="rekap-actions">
+                <button id="generate-material-btn" class="btn btn-primary"><span class="material-symbols-outlined">summarize</span> Tampilkan</button>
+                <button data-action="download-csv" data-report-type="material_supplier" class="btn btn-secondary"><span class="material-symbols-outlined">description</span> Unduh CSV</button>
+                <button data-action="download-report" data-report-type="material_supplier" class="btn btn-secondary"><span class="material-symbols-outlined">picture_as_pdf</span> Unduh PDF</button>
+            </div>
+        </div>
+        <div id="material-results-container" style="margin-top: 1.5rem;"></div>
+    `;
+    _initCustomSelects(container);
+    $('#generate-material-btn').addEventListener('click', _generateLaporanMaterialSupplier);
+}
+
+// [GANTI] Seluruh fungsi _generateLaporanMaterialSupplier
+async function _generateLaporanMaterialSupplier() {
+    const container = $('#material-results-container');
+    container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+
+    const supplierId = $('#material-supplier-id').value;
+    const startDate = new Date($('#material-start-date').value);
+    const endDate = new Date($('#material-end-date').value);
+    endDate.setHours(23, 59, 59, 999);
+    
+    await fetchAndCacheData('projects', projectsCol, 'projectName');
+
+    let q = query(expensesCol, where('type', '==', 'material'), where('date', '>=', startDate), where('date', '<=', endDate));
+    if (supplierId !== 'all') {
+        q = query(q, where('supplierId', '==', supplierId));
+    }
+    
+    const snap = await getDocs(q);
+    const expenses = snap.docs.map(d => d.data());
+
+    if (expenses.length === 0) {
+        container.innerHTML = `<p class="empty-state">Tidak ada data pembelian material pada periode/supplier yang dipilih.</p>`;
+        return;
+    }
+    
+    const reportRows = [];
+    expenses.forEach(exp => {
+        if (exp.items && exp.items.length > 0) {
+            exp.items.forEach(item => {
+                const supplier = appState.suppliers.find(s => s.id === exp.supplierId);
+                const project = appState.projects.find(p => p.id === exp.projectId);
+                reportRows.push({
+                    date: exp.date.toDate(), supplierName: supplier?.supplierName || 'N/A', projectName: project?.projectName || 'N/A',
+                    itemName: item.name, qty: item.qty, price: item.price, total: item.total
+                });
             });
         }
+    });
+
+    if (reportRows.length === 0) {
+        container.innerHTML = `<p class="empty-state">Tidak ada rincian item material yang ditemukan pada data pengeluaran yang dipilih.</p>`;
+        return;
+    }
     
-        const date = new Date().toISOString().slice(0, 10);
-        const filename = `Rekapan-Transaksi-${date}`;
-        
-        if (format === 'csv') {
-            _downloadCSV(headers, data, filename + '.csv');
-        } else { // pdf
-            const pdfData = data.map(row => row.map(cell => cell.replace(/"/g, '')));
-            _downloadPDF(headers, pdfData, filename + '.pdf');
-        }
+    reportRows.sort((a,b) => a.date - b.date);
+
+    // [BARU] Siapkan data mentah untuk PDF
+    const pdfDataRows = reportRows.map(row => [
+        row.date.toLocaleDateString('id-ID'),
+        row.supplierName,
+        row.projectName,
+        row.itemName,
+        row.qty,
+        fmtIDR(row.price),
+        fmtIDR(row.total)
+    ]);
+    // Simpan data PDF ke elemen
+    container.dataset.pdfData = JSON.stringify(pdfDataRows);
+
+    const tableHTML = `
+        <div class="card card-pad" id="material-printable-area">
+            <h5 class="report-title">Rincian Material Periode ${startDate.toLocaleDateString('id-ID')} - ${endDate.toLocaleDateString('id-ID')}</h5>
+            <div class="recap-table-wrapper">
+                <table class="recap-table">
+                    <thead><tr><th>Tanggal</th><th>Supplier</th><th>Proyek</th><th>Nama Barang</th><th>Qty</th><th>Harga Satuan</th><th>Total</th></tr></thead>
+                    <tbody>
+                        ${reportRows.map(row => `<tr><td>${row.date.toLocaleDateString('id-ID')}</td><td>${row.supplierName}</td><td>${row.projectName}</td><td>${row.itemName}</td><td>${row.qty}</td><td>${fmtIDR(row.price)}</td><td>${fmtIDR(row.total)}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    container.innerHTML = tableHTML;
+}
+
+async function _handleDownloadReport(format, reportType) {
+    if (format === 'csv') {
+        toast('info', 'Fitur unduh CSV sedang dalam pengembangan.');
+        return;
     }
 
-    function _downloadCSV(headers, data, filename) {
-        const csvContent = "data:text/csv;charset=utf-8," 
-            + [headers.join(","), ...data.map(e => e.join(","))].join("\n");
-            
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast('success', 'CSV berhasil diunduh!');
-    }
+    let reportConfig = {};
+    let dataAvailable = false;
+    let container, title, headers;
 
-    function _downloadPDF(headers, data, filename) {
-        toast('syncing', 'Membuat PDF...');
-        if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF.autoTable === 'undefined') {
-            toast('error', 'Pustaka PDF gagal dimuat. Coba muat ulang halaman.');
-            console.error('jsPDF atau autoTable tidak ditemukan.');
+    // Switch case untuk menangani setiap jenis laporan
+    switch(reportType) {
+        case 'upah_pekerja':
+            container = $('#upah-results-container');
+            title = 'Laporan Rincian Upah Pekerja';
+            headers = ["Tanggal", "Pekerja", "Proyek", "Status", "Upah", "Status Bayar"];
+            break;
+        case 'material_supplier':
+            container = $('#material-results-container');
+            title = 'Laporan Rincian Material Supplier';
+            headers = ["Tanggal", "Supplier", "Proyek", "Barang", "Qty", "Harga", "Total"];
+            break;
+        case 'rekapan':
+            const table = $('#rekapan-printable-area table');
+            if (table) {
+                const bodyRows = Array.from(table.querySelectorAll('tbody tr')).map(tr => 
+                    Array.from(tr.querySelectorAll('td')).map(td => td.textContent)
+                );
+                const footRow = Array.from(table.querySelector('tfoot tr td')).map(td => td.textContent);
+                if (bodyRows.length > 0) {
+                    reportConfig = {
+                        title: 'Laporan Rekapan Transaksi',
+                        summaryData: [], tableHeaders: ["Tanggal", "Deskripsi", "Pemasukan", "Pengeluaran", "Saldo"],
+                        tableBody: bodyRows, tableFoot: footRow
+                    };
+                    dataAvailable = true;
+                }
+            }
+            break;
+        default:
+            toast('error', 'Tipe laporan ini belum didukung untuk diunduh.');
             return;
+    }
+
+    // Logika umum untuk report 'upah' dan 'material'
+    if (reportType === 'upah_pekerja' || reportType === 'material_supplier') {
+        if (container && container.dataset.pdfData) {
+            const dataRows = JSON.parse(container.dataset.pdfData);
+            if (dataRows.length > 0) {
+                reportConfig = { title: title, summaryData: [], tableHeaders: headers, tableBody: dataRows, tableFoot: [] };
+                dataAvailable = true;
+            }
         }
+    }
 
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    if (dataAvailable) {
+        _generateReportPDF(reportConfig);
+    } else {
+        toast('error', 'Silakan tampilkan laporan terlebih dahulu sebelum mengunduh.');
+    }
+}
+    async function _downloadKwitansiAsPDF(data) {
+    toast('syncing', 'Membuat PDF...');
 
-        pdf.autoTable({
-            head: [headers],
-            body: data,
-            styles: {
-                fillColor: [35, 39, 45],
-                textColor: [225, 227, 230],
-                lineColor: [58, 65, 74],
-                lineWidth: 0.5
-            },
-            headStyles: { fillColor: [0, 128, 64] }
+    const kwitansiElement = $('#kwitansi-printable-area');
+    if (!kwitansiElement) {
+        toast('error', 'Gagal menemukan elemen kwitansi.');
+        return;
+    }
+
+    try {
+        const canvas = await html2canvas(kwitansiElement, { scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+        
+        // Kwitansi biasanya berukuran A6 atau A5 landscape
+        // Kita gunakan ukuran A5 (148 x 210 mm)
+        const pdf = new jspdf.jsPDF({
+            orientation: 'potrait',
+            unit: 'mm',
+            format: 'a6'
         });
 
-        pdf.save(filename);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Kwitansi Gaji - ${data.namaPenerima} - ${data.tanggal}.pdf`);
+        
         toast('success', 'PDF berhasil dibuat!');
+    } catch (error) {
+        console.error("Gagal membuat PDF:", error);
+        toast('error', 'Terjadi kesalahan saat membuat PDF.');
     }
+}
     
-    async function renderLogAktivitasPage() {
-        const container = $('.page-container');
-        container.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
+async function renderLogAktivitasPage(container) { // [MODIFIKASI] Tambahkan parameter
+    // Jika container tidak diberikan, gunakan page-container default
+    const targetContainer = container || $('.page-container');
+    targetContainer.innerHTML = '<div class="loader-container"><div class="spinner"></div></div>';
 
-        const q = query(logsCol, orderBy("createdAt", "desc"));
-        const logSnap = await getDocs(q);
-        const logs = logSnap.docs.map(d => ({id: d.id, ...d.data()}));
+    const q = query(logsCol, orderBy("createdAt", "desc"));
+    const logSnap = await getDocs(q);
+    const logs = logSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
-        if (logs.length === 0) {
-            container.innerHTML = '<p class="empty-state">Belum ada aktivitas yang tercatat.</p>';
-            return;
-        }
-
-        const logHTML = logs.map(log => {
-            const date = log.createdAt.toDate();
-            const time = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            const day = date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
-
-            return `
-                <div class="log-item">
-                    <div class="log-item-header">
-                        <strong class="log-user">${log.userName}</strong>
-                        <span class="log-time">${day}, ${time}</span>
-                    </div>
-                    <p class="log-action">${log.action}</p>
-                </div>
-            `;
-        }).join('');
-
-        container.innerHTML = `<div class="log-container">${logHTML}</div>`;
+    if (logs.length === 0) {
+        targetContainer.innerHTML = '<p class="empty-state">Belum ada aktivitas yang tercatat.</p>';
+        return;
     }
+
+    const logHTML = logs.map(log => {
+        const date = log.createdAt.toDate();
+        const time = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const day = date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
+
+        return `
+            <div class="log-item">
+                <div class="log-item-header">
+                    <strong class="log-user">${log.userName}</strong>
+                    <span class="log-time">${day}, ${time}</span>
+                </div>
+                <p class="log-action">${log.action}</p>
+            </div>
+        `;
+    }).join('');
+
+    targetContainer.innerHTML = `<div class="log-container">${logHTML}</div>`;
+}
 
     async function syncOfflineData() {
         if (appState.isSyncing || !appState.isOnline) return;
