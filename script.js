@@ -5792,82 +5792,25 @@ async function _renderRiwayatRekapView(container) {
     container.innerHTML = `<div style="padding-bottom: 2rem;">${listHTML}</div>`;
 }
 
-// [FUNGSI BARU] Fungsi utama untuk menangani pembuatan kwitansi
-async function handleCetakKwitansi(billId) {
-    toast('syncing', 'Mempersiapkan kwitansi...');
+// =======================================================
+// GANTI SELURUH BLOK FUNGSI KWITANSI INI (TOTAL 4 FUNGSI)
+// =======================================================
 
-    // Ambil data yang diperlukan dari appState
-    const bill = appState.bills.find(b => b.id === billId);
-    if (!bill) {
-        toast('error', 'Data tagihan gaji tidak ditemukan.');
-        return;
-    }
-    await fetchAndCacheData('workers', workersCol, 'workerName');
-    const worker = appState.workers.find(w => w.id === bill.workerId);
-    if (!worker) {
-        toast('error', 'Data pekerja tidak ditemukan.');
-        return;
-    }
-
-    const kwitansiData = {
-        nomor: `KW-G-${bill.id.substring(0, 5).toUpperCase()}`,
-        tanggal: bill.paidAt ? bill.paidAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-        namaPenerima: worker.workerName,
-        jumlah: bill.amount,
-        deskripsi: bill.description
-    };
-
-    // Buat konten modal dengan HTML kwitansi dan tombol download
-    const modalContent = `
-        <div id="kwitansi-printable-area">
-            ${_getKwitansiHTML(kwitansiData)}
-        </div>
-        <div class="modal-footer" style="margin-top: 1rem;">
-            <button class="btn btn-secondary" data-close-modal>Tutup</button>
-            <button id="download-kwitansi-btn" class="btn btn-primary">
-                <span class="material-symbols-outlined">download</span> Unduh PDF
-            </button>
-        </div>
-    `;
-
-    // Tampilkan modal
-    createModal('dataDetail', { title: 'Pratinjau Kwitansi', content: modalContent });
-    hideToast();
-
-    // Tambahkan event listener untuk tombol download setelah modal dibuat
-    $('#download-kwitansi-btn').addEventListener('click', () => {
-        _downloadKwitansiAsPDF(kwitansiData);
-    });
-}
-
-// [FUNGSI BARU] Fungsi untuk menghasilkan string HTML dari kwitansi
+// 1. FUNGSI UNTUK MEMBUAT HTML KWITANSI (DENGAN FIX TEKS 'TERBILANG')
 function _getKwitansiHTML(data) {
-    // Fungsi sederhana untuk mengubah angka menjadi format terbilang
-    // Ini adalah versi sederhana, untuk yang lebih kompleks memerlukan library khusus
-    const terbilang = (angka) => {
-        const bilangan = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
-        if (angka < 12) {
-            return bilangan[angka];
-        } else if (angka < 20) {
-            return terbilang(angka - 10) + " Belas";
-        } else if (angka < 100) {
-            return terbilang(Math.floor(angka / 10)) + " Puluh " + terbilang(angka % 10);
-        } else if (angka < 200) {
-            return "Seratus " + terbilang(angka - 100);
-        } else if (angka < 1000) {
-            return terbilang(Math.floor(angka / 1000)) + " Ratus " + terbilang(angka % 100);
-        } else if (angka < 2000) {
-            return "Seribu " + terbilang(angka - 1000);
-        } else if (angka < 1000000) {
-            return terbilang(Math.floor(angka / 1000)) + " Ribu " + terbilang(angka % 1000);
-        } else if (angka < 1000000000) {
-            return terbilang(Math.floor(angka/1000000)) + " Juta " + terbilang(angka % 1000000);
-        }
-        // Dan seterusnya untuk Miliar, Triliun...
+    const terbilang = (n) => {
+        const bilangan = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+        if (n < 12) return bilangan[n];
+        if (n < 20) return terbilang(n - 10) + " belas";
+        if (n < 100) return terbilang(Math.floor(n / 10)) + " puluh " + terbilang(n % 10);
+        if (n < 200) return "seratus " + terbilang(n - 100);
+        if (n < 1000) return terbilang(Math.floor(n / 100)) + " ratus " + terbilang(n % 100);
+        if (n < 2000) return "seribu " + terbilang(n - 1000);
+        if (n < 1000000) return terbilang(Math.floor(n / 1000)) + " ribu " + terbilang(n % 1000);
+        if (n < 1000000000) return terbilang(Math.floor(n / 1000000)) + " juta " + terbilang(n % 1000000);
         return "";
     };
-
-    const jumlahTerbilang = terbilang(data.jumlah).trim() + " Rupiah";
+    const jumlahTerbilang = (terbilang(data.jumlah).trim() + " rupiah").replace(/\s+/g, ' ').replace(/^\w/, c => c.toUpperCase());
 
     return `
         <div class="kwitansi-container">
@@ -5883,9 +5826,7 @@ function _getKwitansiHTML(data) {
                 </dl>
             </div>
             <div class="kwitansi-footer">
-                <div class="kwitansi-jumlah-box">
-                    ${fmtIDR(data.jumlah)}
-                </div>
+                <div class="kwitansi-jumlah-box">${fmtIDR(data.jumlah)}</div>
                 <div class="kwitansi-ttd">
                     <p>Cijiwa, ${data.tanggal}</p>
                     <p class="penerima">Penerima,</p>
@@ -5894,6 +5835,98 @@ function _getKwitansiHTML(data) {
             </div>
         </div>
     `;
+}
+
+// 2. FUNGSI UNTUK MENAMPILKAN MODAL (DENGAN TOMBOL YANG BENAR)
+async function handleCetakKwitansi(billId) {
+    toast('syncing', 'Mempersiapkan kwitansi...');
+
+    const bill = appState.bills.find(b => b.id === billId);
+    if (!bill) { toast('error', 'Data tagihan gaji tidak ditemukan.'); return; }
+    const worker = appState.workers.find(w => w.id === bill.workerId);
+    if (!worker) { toast('error', 'Data pekerja tidak ditemukan.'); return; }
+
+    const kwitansiData = {
+        nomor: `KW-G-${bill.id.substring(0, 5).toUpperCase()}`,
+        tanggal: bill.paidAt ? bill.paidAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+        namaPenerima: worker.workerName,
+        jumlah: bill.amount,
+        deskripsi: bill.description
+    };
+
+    const modalContent = `
+        <div id="kwitansi-printable-area">${_getKwitansiHTML(kwitansiData)}</div>
+        <div class="modal-footer kwitansi-footer-actions">
+            <button id="download-kwitansi-img-btn" class="btn btn-secondary">
+                <span class="material-symbols-outlined">image</span> Unduh Gambar
+            </button>
+            <button id="download-kwitansi-btn" class="btn btn-primary">
+                <span class="material-symbols-outlined">picture_as_pdf</span> Unduh PDF
+            </button>
+        </div>
+    `;
+
+    createModal('dataDetail', { title: 'Pratinjau Kwitansi', content: modalContent });
+    hideToast();
+
+    $('#download-kwitansi-img-btn').addEventListener('click', () => {
+        _downloadKwitansiAsImage(kwitansiData);
+    });
+    $('#download-kwitansi-btn').addEventListener('click', () => {
+        _downloadKwitansiAsPDF(kwitansiData);
+    });
+}
+
+// 3. FUNGSI UNTUK UNDUH PDF (DENGAN FIX ANTI-STRETCH)
+async function _downloadKwitansiAsPDF(data) {
+    toast('syncing', 'Membuat PDF...');
+    const kwitansiElement = $('#kwitansi-printable-area');
+    if (!kwitansiElement) { toast('error', 'Gagal menemukan elemen kwitansi.'); return; }
+    try {
+        const canvas = await html2canvas(kwitansiElement, { scale: 3, useCORS: true });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a7' });
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const canvasAspectRatio = canvas.width / canvas.height;
+        let finalImgWidth = pdfWidth - 10;
+        let finalImgHeight = finalImgWidth / canvasAspectRatio;
+
+        if (finalImgHeight > pdfHeight - 10) {
+            finalImgHeight = pdfHeight - 10;
+            finalImgWidth = finalImgHeight * canvasAspectRatio;
+        }
+        const x = (pdfWidth - finalImgWidth) / 2;
+        const y = (pdfHeight - finalImgHeight) / 2;
+
+        pdf.addImage(imgData, 'PNG', x, y, finalImgWidth, finalImgHeight);
+        pdf.save(`Kwitansi-${data.namaPenerima.replace(/\s+/g, '-')}-${data.tanggal}.pdf`);
+        toast('success', 'PDF berhasil dibuat!');
+    } catch (error) {
+        console.error("Gagal membuat PDF:", error);
+        toast('error', 'Terjadi kesalahan saat membuat PDF.');
+    }
+}
+
+// 4. FUNGSI BARU YANG HILANG UNTUK UNDUH GAMBAR
+async function _downloadKwitansiAsImage(data) {
+    toast('syncing', 'Membuat gambar kwitansi...');
+    const kwitansiElement = $('#kwitansi-printable-area');
+    if (!kwitansiElement) { toast('error', 'Gagal menemukan elemen kwitansi.'); return; }
+    try {
+        const canvas = await html2canvas(kwitansiElement, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        link.download = `Kwitansi-${data.namaPenerima.replace(/\s+/g, '-')}-${data.tanggal}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast('success', 'Gambar kwitansi berhasil diunduh!');
+    } catch (error) {
+        console.error("Gagal membuat gambar dari HTML:", error);
+        toast('error', 'Terjadi kesalahan saat membuat gambar.');
+    }
 }
 
     async function _renderJurnalAbsensiTabs(container) {
@@ -6944,40 +6977,7 @@ async function _handleDownloadReport(format, reportType) {
         toast('error', 'Silakan tampilkan laporan terlebih dahulu sebelum mengunduh.');
     }
 }
-    async function _downloadKwitansiAsPDF(data) {
-    toast('syncing', 'Membuat PDF...');
 
-    const kwitansiElement = $('#kwitansi-printable-area');
-    if (!kwitansiElement) {
-        toast('error', 'Gagal menemukan elemen kwitansi.');
-        return;
-    }
-
-    try {
-        const canvas = await html2canvas(kwitansiElement, { scale: 2 });
-        const imgData = canvas.toDataURL('image/png');
-        
-        // Kwitansi biasanya berukuran A6 atau A5 landscape
-        // Kita gunakan ukuran A5 (148 x 210 mm)
-        const pdf = new jspdf.jsPDF({
-            orientation: 'potrait',
-            unit: 'mm',
-            format: 'a6'
-        });
-
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Kwitansi Gaji - ${data.namaPenerima} - ${data.tanggal}.pdf`);
-        
-        toast('success', 'PDF berhasil dibuat!');
-    } catch (error) {
-        console.error("Gagal membuat PDF:", error);
-        toast('error', 'Terjadi kesalahan saat membuat PDF.');
-    }
-}
-    
 async function renderLogAktivitasPage(container) { // [MODIFIKASI] Tambahkan parameter
     // Jika container tidak diberikan, gunakan page-container default
     const targetContainer = container || $('.page-container');

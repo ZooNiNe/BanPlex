@@ -1046,6 +1046,22 @@ body.selection-active .selection-bar.show {
   text-decoration: underline;
 }
 
+/* GANTI BLOK CSS INI di style.css */
+.kwitansi-footer-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border-top: 1px solid var(--line);
+}
+
+#kwitansi-printable-area {
+  width: 100%;
+  aspect-ratio: 74 / 105;
+  background-color: white;
+}
+
 /* [GANTI SELURUH BLOK CSS SIMULASI INI] */
 .simulasi-section {
   margin-bottom: 0.5rem;
@@ -1300,67 +1316,32 @@ body.selection-active .selection-bar.show {
      gap: 0.75rem;
      margin-top: 1.5rem;
  }
-/* [GANTI BLOK CSS INI] Style untuk Sub-Seksi di Halaman Simulasi */
-.simulasi-subsection {
-  margin-bottom: 0.75rem;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--line);
+ .simulasi-subsection {
+  margin-bottom: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.simulasi-subsection:first-child {
+  border-top: none;
+  padding-top: 0;
 }
 .simulasi-subsection:last-child {
   margin-bottom: 0;
 }
 
-/* [BARU] Header sub-seksi sekarang adalah button */
 .simulasi-subsection-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background-color: var(--surface-muted);
-  border: none;
-  cursor: pointer;
-  text-align: left;
-}
-
-.simulasi-subsection-header .subsection-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.simulasi-subsection-header .subsection-info span {
-  font-size: 0.9rem;
+  padding: 0 0.5rem 0.5rem 0.5rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text);
-}
-.simulasi-subsection-header .subsection-info small {
-  font-size: 0.75rem;
-  font-weight: 500;
   color: var(--text-dim);
 }
 
-.simulasi-subsection-header .sub-header-icon {
-  transition: transform 0.3s ease;
-}
-
-/* [BARU] Logika untuk animasi buka-tutup */
 .simulasi-subsection-content {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s ease-out;
   padding: 0 0.5rem;
 }
-
-.simulasi-subsection.open .simulasi-subsection-header .sub-header-icon {
-  transform: rotate(180deg);
-}
-.simulasi-subsection.open .simulasi-subsection-content {
-  max-height: 1000px; /* Nilai besar untuk menampung item */
-  transition: max-height 0.4s ease-in;
-  padding: 0.75rem 0.5rem 0.25rem 0.5rem;
-}
- /* CSS untuk tampilan daftar tagihan yang ringkas */
 .dense-list-container {
   padding: 0 .5rem 2rem .5rem;
 }
