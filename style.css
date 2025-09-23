@@ -514,22 +514,37 @@ input:disabled, select:disabled, textarea:disabled, button:disabled { opacity: 0
 .sort-direction button { background: transparent; border: none; padding: .5rem; cursor: pointer; border-radius: 6px; color: var(--text-dim); }
 .sort-direction button.active { background: var(--panel); color: var(--primary); box-shadow: var(--shadow-sm); }
 
-/* Desktop & Large Screen Adjustments */
+.sidebar {
+  display: none;
+}
+.bottom-nav {
+  display: flex; /* Pastikan ini 'flex' bukan 'none' */
+}
+.content-wrapper {
+  padding-bottom: 75px; /* Beri ruang untuk bottom nav di mobile */
+}
+
+/* Aturan untuk Desktop (Layar lebih lebar dari 768px) */
 @media (min-width: 768px) {
-  .bottom-nav { display: none; }
-  .sidebar { display: flex; flex-direction: column; width: 240px; background-color: var(--panel); border-right: 1px solid var(--line); padding: 1.5rem 1rem; height: 100vh; position: sticky; top: 0; }
-  .sidebar-header { display: flex; align-items: center; gap: 0.75rem; padding: 0 0.5rem 2rem 0.5rem; }
-  .sidebar-logo { width: 40px; height: 40px; }
-  .sidebar-title { font-size: 1.25rem; font-weight: 700; }
-  .sidebar .nav-item { flex-direction: row; justify-content: flex-start; gap: 1rem; width: 100%; padding: 0.75rem 1rem; font-size: 0.9rem; border-radius: var(--radius-sm); }
-  .sidebar .nav-item:hover { background-color: var(--surface-muted); }
-  .sidebar .nav-item .nav-text { display: block; }
-  .sidebar .nav-item .notification-badge { position: static; margin-left: auto; transform: none; }
-  .content-wrapper { padding-bottom: 0; }
-  .dashboard-actions-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
-  .modal-bg { align-items: center; }
-  .modal-content { width: 100%; max-width: 500px; max-height: 90vh; border-radius: var(--radius-lg); transform: scale(.95); transition: transform .3s cubic-bezier(0.4, 0, 0.2, 1), opacity .3s; }
-  .modal-bg.show .modal-content { transform: scale(1); }
+  .sidebar {
+      display: flex; /* Tampilkan Sidebar */
+      flex-direction: column;
+      width: 240px;
+      background-color: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 1.5rem 1rem;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+  }
+
+  .bottom-nav {
+      display: none !important; /* Sembunyikan Bottom Nav di Desktop */
+  }
+
+  .content-wrapper {
+      padding-bottom: 0; /* Hapus ruang di bawah untuk desktop */
+  }
 }
 
 /* =======================================================
@@ -1169,26 +1184,24 @@ body.selection-active .selection-bar.show {
  * [REVISI FINAL] Style Halaman Simulasi Pembayaran
  * ======================================================= */
 
-/* [FIX] Memberi jarak bawah agar tidak menempel dengan kartu di bawahnya */
-.simulasi-summary {
+ .simulasi-summary {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem; /* [FIX] Jarak vertikal di dalam kartu diperkecil */
-  margin-bottom: 1rem; /* [FIX] Jarak ke kartu section di bawah */
+  gap: 0.75rem; /* Jarak vertikal di dalam kartu diperkecil */
+  margin-bottom: 1.25rem; /* Jarak ke kartu section di bawah */
 }
 
-/* [FIX] Perkecil tinggi tombol PDF */
 .simulasi-summary .btn {
-  padding: 0.3rem 1rem; /* Padding vertikal dikurangi */
-  min-height: 20px; /* Menetapkan tinggi minimal */
+  padding: 0.5rem 1rem; /* Padding vertikal dikurangi */
+  min-height: 40px; /* Menetapkan tinggi minimal */
 }
 
 .simulasi-totals {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  padding-top: 0.1rem;
-  margin-top: 0.1rem;
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
   border-top: 1px solid var(--line);
 }
 
@@ -1200,21 +1213,33 @@ body.selection-active .selection-bar.show {
 
 .simulasi-totals .label {
   font-size: 0.75rem;
-  font-weight: 250;
+  font-weight: 500;
   color: var(--text-dim);
 }
 
 .simulasi-totals strong {
-  font-size: 1rem; /* [FIX] Ukuran nominal total diperkecil */
+  font-size: 1.2rem; /* Ukuran nominal total */
   font-weight: 700;
   line-height: 1.2;
 }
 
-.simulasi-totals strong.negative {
-  color: var(--danger);
+.total-with-percent {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
 }
 
-/* Accordion untuk setiap bagian tagihan */
+.percent-badge {
+  display: inline-flex;
+  font-size: 0.7rem;
+  padding: .15rem .4rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
 .simulasi-section {
   margin-bottom: 0.75rem;
   padding: 0;
@@ -1226,30 +1251,38 @@ body.selection-active .selection-bar.show {
   padding: 0.75rem 1rem;
 }
 
-.simulasi-section-header .header-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
 .simulasi-section-header .header-title {
-  font-size: 0.95rem; /* [FIX] Ukuran header section diperkecil */
+  font-size: 0.95rem; /* Ukuran header section */
   font-weight: 600;
 }
 
-.simulasi-section-header .header-total {
-  font-size: 0.75rem;
+.simulasi-subsection {
+  margin-bottom: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.simulasi-subsection:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.simulasi-subsection:last-child {
+  margin-bottom: 0;
 }
 
-.simulasi-section-content {
-  padding: 0 1rem;
+.simulasi-subsection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0.5rem 0.5rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
 }
 
-.simulasi-section.open .simulasi-section-content {
-  padding: 0.5rem 1rem 1rem 1rem;
+.simulasi-subsection-content {
+  padding: 0 0.5rem;
 }
 
-/* Kartu item tagihan (tidak ada perubahan di sini) */
 .simulasi-item {
   display: flex;
   justify-content: space-between;
@@ -1281,7 +1314,8 @@ body.selection-active .selection-bar.show {
   font-size: 0.9rem;
   text-align: right;
 }
- .cicilan-label {
+
+.cicilan-label {
      display: block;
      font-size: 0.75rem;
      font-weight: 500;

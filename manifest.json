@@ -3,7 +3,7 @@
   "short_name": "BanPlex",
   "description": "Portal Keuangan Proyek untuk manajemen transaksi, absensi, dan laporan secara efisien.",
   "start_url": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#f0f4f8",
   "theme_color": "#f0f4f8",
   "scope": "./",
