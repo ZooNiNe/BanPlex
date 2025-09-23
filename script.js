@@ -2497,41 +2497,52 @@ function _getFormPemasukanHTML(type) {
         `;
     }
 
-    function _attachPengeluaranFormListeners(type) {
-        _initCustomSelects();
-        const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
-        if (!form) return;
-    
-        // Listener untuk tombol status
-        form.querySelectorAll('.btn-status-payment').forEach(btn => {
-            btn.addEventListener('click', () => {
-                form.querySelectorAll('.btn-status-payment').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                if (form.querySelector('input[name="status"]')) {
-                    form.querySelector('input[name="status"]').value = btn.dataset.status;
-                }
+        // GANTI SELURUH FUNGSI INI
+        function _attachPengeluaranFormListeners(type) {
+            _initCustomSelects();
+            const form = (type === 'material') ? $('#material-invoice-form') : $('#pengeluaran-form');
+            if (!form) return;
+
+            // Listener untuk tombol status
+            form.querySelectorAll('.btn-status-payment').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    form.querySelectorAll('.btn-status-payment').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    if (form.querySelector('input[name="status"]')) {
+                        form.querySelector('input[name="status"]').value = btn.dataset.status;
+                    }
+                });
             });
-        });
-    
-        // Pasang listener spesifik berdasarkan tipe form
-        if (type === 'material') {
-            $('#add-invoice-item-btn')?.addEventListener('click', _addInvoiceItemRow);
-            $('#invoice-items-container')?.addEventListener('input', _handleInvoiceItemChange);
-            const invoiceNumberInput = $('#pengeluaran-deskripsi');
-            if (invoiceNumberInput) {
-                invoiceNumberInput.value = _generateInvoiceNumber();
+
+            // Pasang listener spesifik berdasarkan tipe form
+            if (type === 'material') {
+                // [PERBAIKAN] Mengubah cara event listener dipasang
+                $('#add-invoice-item-btn')?.addEventListener('click', () => _addInvoiceItemRow());
+                
+                // [PERBAIKAN] Menggunakan arrow function untuk memastikan konteks benar
+                $('#invoice-items-container')?.addEventListener('input', (e) => _handleInvoiceItemChange(e));
+
+                const invoiceNumberInput = $('#pengeluaran-deskripsi');
+                if (invoiceNumberInput) {
+                    invoiceNumberInput.value = _generateInvoiceNumber();
+                }
+                
+                // [PENINGKATAN] Tambahkan baris item pertama secara otomatis saat form dimuat
+                if ($$('#invoice-items-container .invoice-item-row').length === 0) {
+                    _addInvoiceItemRow();
+                }
+
+            } else {
+                $('#pengeluaran-jumlah')?.addEventListener('input', _formatNumberInput);
             }
-        } else {
-            $('#pengeluaran-jumlah')?.addEventListener('input', _formatNumberInput);
+            
+            // Pasang listener submit untuk form, APAPUN tipenya
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleAddPengeluaran(e, type); // Panggil handleAddPengeluaran
+            });
         }
-        
-        // Pasang listener submit untuk form, APAPUN tipenya
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleAddPengeluaran(e, type); // Panggil handleAddPengeluaran
-        });
-    }
-    
+
     async function handleAddPengeluaran(e, type) {
         e.preventDefault();
         const form = e.target;
