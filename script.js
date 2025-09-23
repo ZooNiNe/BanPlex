@@ -3190,124 +3190,284 @@ async function handleDeleteMasterItem(id, type) {
         }
     }
 
-    async function handleEditItem(id, type) {
-        let list, item, formHTML = 'Form tidak tersedia.';
+// GANTI SELURUH FUNGSI INI
+async function handleEditItem(id, type) {
+    let list, item, formHTML = 'Form tidak tersedia.';
     
-        if (type === 'expense') {
-            // [PERBAIKAN] Menggunakan fetchAndCacheData untuk memastikan data terbaru
-            await fetchAndCacheData('expenses', expensesCol); 
-            list = appState.expenses;
-        } else if (type === 'termin') { list = appState.incomes; } 
-        else if (type === 'pinjaman') { list = appState.fundingSources; } 
-        else { toast('error', 'Tipe data tidak dikenal.'); return; }
-    
-        item = list.find(i => i.id === id);
-        if (!item) { 
-             const docRef = doc(expensesCol, id);
-             const docSnap = await getDoc(docRef);
-             if (docSnap.exists()) item = {id: docSnap.id, ...docSnap.data()};
-             else { toast('error', 'Data tidak ditemukan.'); return; }
+    // Tentukan list sumber data dan ambil item yang sesuai
+    if (type === 'expense') {
+        await fetchAndCacheData('expenses', expensesCol); 
+        item = appState.expenses.find(i => i.id === id);
+    } else if (type === 'termin') {
+        item = appState.incomes.find(i => i.id === id);
+    } else if (type === 'pinjaman') {
+        item = appState.fundingSources.find(i => i.id === id);
+    } else if (type === 'bill') {
+        item = appState.bills.find(b => b.id === id);
+        // Jika tagihan ini berasal dari pengeluaran, target edit kita adalah pengeluarannya
+        if (item && item.expenseId) {
+            type = 'expense';
+            item = appState.expenses.find(e => e.id === item.expenseId);
         }
+        // Jika ini adalah tagihan fee, kita akan mengedit tagihannya langsung
+        else if (item && item.type === 'fee') {
+            type = 'fee_bill'; // Gunakan tipe kustom untuk membedakan
+        }
+    } else {
+        toast('error', 'Tipe data tidak dikenal.'); return;
+    }
+
+    if (!item) {
+        toast('error', 'Data tidak ditemukan untuk diedit.'); return;
+    }
+    
+    // Ambil tanggal jika ada
+    const date = item.date?.toDate ? item.date.toDate().toISOString().slice(0, 10) : item.createdAt.toDate().toISOString().slice(0, 10);
+    
+    // Logika pembuatan form berdasarkan tipe data
+    if (type === 'termin') {
+        // ... (Logika untuk termin tidak berubah)
+        const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
+        formHTML = `
+            <form id="edit-item-form" data-id="${id}" data-type="${type}">
+                <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" name="amount" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
+                <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
+                ${createMasterDataSelect('projectId', 'Proyek Terkait', projectOptions, item.projectId, 'projects')}
+                <button type="submit" class="btn btn-primary">Update</button>
+            </form>
+        `;
+    } else if (type === 'pinjaman') {
+        // ... (Logika untuk pinjaman tidak berubah)
+        const creditorOptions = appState.fundingCreditors.map(c => ({ value: c.id, text: c.creditorName }));
+        const loanTypeOptions = [ {value: 'none', text: 'Tanpa Bunga'}, {value: 'interest', text: 'Berbunga'} ];
+        formHTML = `
+            <form id="edit-item-form" data-id="${id}" data-type="${type}">
+                <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" name="totalAmount" value="${new Intl.NumberFormat('id-ID').format(item.totalAmount)}" required></div>
+                <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
+                ${createMasterDataSelect('creditorId', 'Kreditur', creditorOptions, item.creditorId, 'creditors')}
+                ${createMasterDataSelect('interestType', 'Jenis Pinjaman', loanTypeOptions, item.interestType)}
+                <div class="loan-details ${item.interestType === 'none' ? 'hidden' : ''}">
+                    <div class="form-group"><label>Suku Bunga (% per bulan)</label><input type="number" name="rate" value="${item.rate || ''}" step="0.01" min="1"></div>
+                    <div class="form-group"><label>Tenor (bulan)</label><input type="number" name="tenor" value="${item.tenor || ''}" min="1"></div>
+                </div>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </form>
+        `;
+    } else if (type === 'expense' && item.type === 'material') {
+        // [LOGIKA BARU] Panggil fungsi baru untuk membuat form edit faktur material
+        formHTML = _getEditFormFakturMaterialHTML(item);
+
+    } else if (type === 'expense') {
+        // ... (Logika untuk expense operasional/lainnya tidak berubah)
+        let categoryOptions = [], masterType = '', categoryLabel = '';
+        if (item.type === 'operasional') {
+            categoryOptions = appState.operationalCategories.map(c => ({ value: c.id, text: c.categoryName }));
+            masterType = 'op-cats'; categoryLabel = 'Kategori Operasional';
+        } else if (item.type === 'lainnya') {
+            categoryOptions = appState.otherCategories.map(c => ({ value: c.id, text: c.categoryName }));
+            masterType = 'other-cats'; categoryLabel = 'Kategori Lainnya';
+        }
+        formHTML = `
+            <form id="edit-item-form" data-id="${id}" data-type="${type}">
+                 <div class="form-group"><label>Jumlah</label><input type="text" name="amount" inputmode="numeric" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
+                 <div class="form-group"><label>Deskripsi</label><input type="text" name="description" value="${item.description}" required></div>
+                ${masterType ? createMasterDataSelect('categoryId', categoryLabel, categoryOptions, item.categoryId, masterType) : ''}
+                <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
+                <p>Status saat ini: <strong>${item.status === 'paid' ? 'Lunas' : 'Tagihan'}</strong>. Perubahan status tidak dapat dilakukan di sini.</p>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </form>
+        `;
+    } else if (type === 'fee_bill') {
+        // [LOGIKA BARU] Form khusus untuk mengedit tagihan fee
+        formHTML = `
+            <form id="edit-item-form" data-id="${item.id}" data-type="fee_bill">
+                <div class="form-group">
+                    <label>Deskripsi</label>
+                    <input type="text" name="description" value="${item.description}" required>
+                </div>
+                <div class="form-group">
+                    <label>Jumlah Fee</label>
+                    <input type="text" inputmode="numeric" name="amount" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required>
+                </div>
+                <p>Mengedit tagihan ini tidak akan mengubah catatan pemasukan asli.</p>
+                <button type="submit" class="btn btn-primary">Update Tagihan Fee</button>
+            </form>
+        `;
+    }
+    
+    createModal('editItem', { title: `Edit Data`, content: formHTML });
+
+    // [LOGIKA BARU] Pasang listener jika ini adalah form edit material
+    if (type === 'expense' && item.type === 'material') {
+        const modalEl = $('#editItem-modal');
+        if (modalEl) {
+            $('#add-invoice-item-btn', modalEl).addEventListener('click', () => _addInvoiceItemRow(modalEl));
+            $('#invoice-items-container', modalEl).addEventListener('input', (e) => _handleInvoiceItemChange(e, modalEl));
+            // Tambahkan event listener untuk tombol hapus pada item yang sudah ada
+            $$('.remove-item-btn', modalEl).forEach(btn => btn.addEventListener('click', (e) => {
+                e.target.closest('.invoice-item-row').remove();
+                _updateInvoiceTotal(modalEl);
+            }));
+        }
+    }
+}
+
+// [FUNGSI BARU]
+function _getEditFormFakturMaterialHTML(item) {
+    const supplierOptions = appState.suppliers
+        .filter(s => s.category === 'Material')
+        .map(s => ({ value: s.id, text: s.supplierName }));
+    const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
+    const date = item.date.toDate().toISOString().slice(0, 10);
+
+    const itemsHTML = (item.items || []).map((itemRow, index) => `
+        <div class="invoice-item-row" data-index="${index}">
+            <input type="text" name="itemName" placeholder="Nama Barang" class="item-name" value="${itemRow.name}" required>
+            <div class="item-details">
+                <input type="text" inputmode="numeric" name="itemPrice" placeholder="Harga" class="item-price" value="${new Intl.NumberFormat('id-ID').format(itemRow.price)}" required>
+                <span>x</span>
+                <input type="number" name="itemQty" placeholder="Qty" class="item-qty" value="${itemRow.qty}" required>
+            </div>
+            <span class="item-total">${fmtIDR(itemRow.total)}</span>
+            <button type="button" class="btn-icon btn-icon-danger remove-item-btn"><span class="material-symbols-outlined">delete</span></button>
+        </div>
+    `).join('');
+
+    return `
+    <form id="edit-item-form" data-id="${item.id}" data-type="expense">
+        ${createMasterDataSelect('project-id', 'Proyek', projectOptions, item.projectId)}
+        <div class="form-group">
+            <label>No. Faktur/Deskripsi</label>
+            <input type="text" name="description" value="${item.description}" required>
+        </div>
+        ${createMasterDataSelect('supplier-id', 'Supplier', supplierOptions, item.supplierId)}
+        <div class="form-group">
+            <label>Tanggal Faktur</label>
+            <input type="date" name="date" value="${date}" required>
+        </div>
+
+        <h5 class="invoice-section-title">Rincian Barang</h5>
+        <div id="invoice-items-container">${itemsHTML}</div>
+        <div class="add-item-action">
+            <button type="button" id="add-invoice-item-btn" class="btn-icon" title="Tambah Barang">
+                <span class="material-symbols-outlined">add_circle</span>
+            </button>
+        </div>
         
-        const date = item.date.toDate().toISOString().slice(0, 10);
-        
+        <div class="invoice-total">
+            <span>Total Faktur:</span>
+            <strong id="invoice-total-amount">${fmtIDR(item.amount)}</strong>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Simpan Perubahan Faktur</button>
+    </form>
+    `;
+}
+
+// GANTI SELURUH FUNGSI INI
+async function handleUpdateItem(form) {
+    const { id, type } = form.dataset;
+    toast('syncing', 'Memperbarui data...');
+
+    try {
+        let col, dataToUpdate = {};
+
         if (type === 'termin') {
-            const projectOptions = appState.projects.map(p => ({ value: p.id, text: p.projectName }));
-            formHTML = `
-                <form id="edit-item-form" data-id="${id}" data-type="${type}">
-                    <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" name="amount" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
-                    <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
-                    ${createMasterDataSelect('projectId', 'Proyek Terkait', projectOptions, item.projectId, 'projects')}
-                    <button type="submit" class="btn btn-primary">Update</button>
-                </form>
-            `;
+            col = incomesCol;
+            dataToUpdate = { amount: parseFormattedNumber(form.elements.amount.value), date: new Date(form.elements.date.value), projectId: form.elements.projectId.value, };
+            await updateDoc(doc(col, id), dataToUpdate);
+
         } else if (type === 'pinjaman') {
-            const creditorOptions = appState.fundingCreditors.map(c => ({ value: c.id, text: c.creditorName }));
-            const loanTypeOptions = [ {value: 'none', text: 'Tanpa Bunga'}, {value: 'interest', text: 'Berbunga'} ];
-            formHTML = `
-                <form id="edit-item-form" data-id="${id}" data-type="${type}">
-                    <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" name="totalAmount" value="${new Intl.NumberFormat('id-ID').format(item.totalAmount)}" required></div>
-                    <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
-                    ${createMasterDataSelect('creditorId', 'Kreditur', creditorOptions, item.creditorId, 'creditors')}
-                    ${createMasterDataSelect('interestType', 'Jenis Pinjaman', loanTypeOptions, item.interestType)}
-                    <div class="loan-details ${item.interestType === 'none' ? 'hidden' : ''}">
-                        <div class="form-group"><label>Suku Bunga (% per bulan)</label><input type="number" name="rate" value="${item.rate || ''}" step="0.01" min="1"></div>
-                        <div class="form-group"><label>Tenor (bulan)</label><input type="number" name="tenor" value="${item.tenor || ''}" min="1"></div>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Update</button>
-                </form>
-            `;
-        } else if (type === 'expense') {
-            let categoryOptions = [], masterType = '', categoryLabel = '';
-            if (item.type === 'operasional') {
-                categoryOptions = appState.operationalCategories.map(c => ({ value: c.id, text: c.categoryName }));
-                masterType = 'op-cats'; categoryLabel = 'Kategori Operasional';
-            } else if (item.type === 'lainnya') {
-                categoryOptions = appState.otherCategories.map(c => ({ value: c.id, text: c.categoryName }));
-                masterType = 'other-cats'; categoryLabel = 'Kategori Lainnya';
+            col = fundingSourcesCol;
+            dataToUpdate = { totalAmount: parseFormattedNumber(form.elements.totalAmount.value), date: new Date(form.elements.date.value), creditorId: form.elements.creditorId.value, interestType: form.elements.interestType.value };
+            if (dataToUpdate.interestType === 'interest') {
+                dataToUpdate.rate = Number(form.elements.rate.value);
+                dataToUpdate.tenor = Number(form.elements.tenor.value);
+                dataToUpdate.totalRepaymentAmount = dataToUpdate.totalAmount * (1 + (dataToUpdate.rate / 100 * dataToUpdate.tenor));
+            } else {
+                dataToUpdate.rate = null; dataToUpdate.tenor = null; dataToUpdate.totalRepaymentAmount = null;
             }
-            formHTML = `
-                <form id="edit-item-form" data-id="${id}" data-type="${type}">
-                     <div class="form-group"><label>Jumlah</label><input type="text" name="amount" inputmode="numeric" value="${new Intl.NumberFormat('id-ID').format(item.amount)}" required></div>
-                     <div class="form-group"><label>Deskripsi</label><input type="text" name="description" value="${item.description}" required></div>
-                    ${masterType ? createMasterDataSelect('categoryId', categoryLabel, categoryOptions, item.categoryId, masterType) : ''}
-                    <div class="form-group"><label>Tanggal</label><input type="date" name="date" value="${date}" required></div>
-                    <p>Status saat ini: <strong>${item.status === 'paid' ? 'Lunas' : 'Tagihan'}</strong>. Perubahan status tidak dapat dilakukan di sini.</p>
-                    <button type="submit" class="btn btn-primary">Update</button>
-                </form>
-            `;
+            await updateDoc(doc(col, id), dataToUpdate);
+
+        } else if (type === 'fee_bill') {
+            // [LOGIKA BARU] Untuk menyimpan perubahan tagihan fee
+            col = billsCol;
+            dataToUpdate = {
+                amount: parseFormattedNumber(form.elements.amount.value),
+                description: form.elements.description.value
+            };
+            await updateDoc(doc(col, id), dataToUpdate);
+
+        } else if (type === 'expense') {
+            const batch = writeBatch(db);
+            const expenseRef = doc(expensesCol, id);
+
+            // Cek apakah ini form material (dengan rincian barang)
+            if (form.querySelector('#invoice-items-container')) {
+                const items = [];
+                $$('.invoice-item-row', form).forEach(row => {
+                    const name = row.querySelector('input[name="itemName"]').value;
+                    const price = parseFormattedNumber(row.querySelector('input[name="itemPrice"]').value);
+                    const qty = Number(row.querySelector('input[name="itemQty"]').value);
+                    if (name && price > 0 && qty > 0) items.push({ name, price, qty, total: price * qty });
+                });
+                
+                if (items.length === 0) {
+                    toast('error', 'Faktur harus memiliki minimal satu barang.');
+                    return;
+                }
+
+                dataToUpdate = {
+                    projectId: form.elements['project-id'].value,
+                    supplierId: form.elements['supplier-id'].value,
+                    description: form.elements.description.value,
+                    date: new Date(form.elements.date.value),
+                    items: items,
+                    amount: items.reduce((sum, item) => sum + item.total, 0) // Hitung ulang total
+                };
+
+            } else {
+                // Untuk expense biasa (operasional/lainnya)
+                dataToUpdate = {
+                    amount: parseFormattedNumber(form.elements.amount.value),
+                    description: form.elements.description.value,
+                    date: new Date(form.elements.date.value),
+                    categoryId: form.elements.categoryId?.value || ''
+                };
+            }
+
+            batch.update(expenseRef, dataToUpdate);
+            
+            // Perbarui juga tagihan yang terkait
+            const q = query(billsCol, where("expenseId", "==", id));
+            const billSnap = await getDocs(q);
+            if (!billSnap.empty) {
+                const billRef = billSnap.docs[0].ref;
+                batch.update(billRef, { 
+                    amount: dataToUpdate.amount, 
+                    description: dataToUpdate.description, 
+                    dueDate: dataToUpdate.date 
+                });
+            }
+            await batch.commit();
+
+        } else {
+            return;
         }
         
-        createModal('editItem', { title: `Edit Data ${type}`, content: formHTML });
+        await _logActivity(`Memperbarui Data: ${type}`, { docId: id, description: dataToUpdate.description || dataToUpdate.amount });
+
+        toast('success', 'Data berhasil diperbarui.');
+        if (appState.activePage === 'pemasukan') await _rerenderPemasukanList(appState.activeSubPage.get('pemasukan'));
+        if (appState.activePage === 'pengeluaran') await _rerenderPengeluaranList(appState.activeSubPage.get('pengeluaran'));
+        if (appState.activePage === 'tagihan') renderTagihanPage();
+
+    } catch (error) {
+        toast('error', 'Gagal memperbarui data.');
+        console.error('Update error:', error);
     }
-    
-    async function handleUpdateItem(form) {
-        const { id, type } = form.dataset;
-        toast('syncing', 'Memperbarui data...');
+}
 
-        try {
-            let col, dataToUpdate = {};
-
-            if (type === 'termin') {
-                col = incomesCol;
-                dataToUpdate = { amount: parseFormattedNumber(form.elements.amount.value), date: new Date(form.elements.date.value), projectId: form.elements.projectId.value, };
-            } else if (type === 'pinjaman') {
-                col = fundingSourcesCol;
-                dataToUpdate = { totalAmount: parseFormattedNumber(form.elements.totalAmount.value), date: new Date(form.elements.date.value), creditorId: form.elements.creditorId.value, interestType: form.elements.interestType.value };
-                if (dataToUpdate.interestType === 'interest') {
-                    dataToUpdate.rate = Number(form.elements.rate.value);
-                    dataToUpdate.tenor = Number(form.elements.tenor.value);
-                    dataToUpdate.totalRepaymentAmount = dataToUpdate.totalAmount * (1 + (dataToUpdate.rate / 100 * dataToUpdate.tenor));
-                } else {
-                    dataToUpdate.rate = null; dataToUpdate.tenor = null; dataToUpdate.totalRepaymentAmount = null;
-                }
-            } else if (type === 'expense') {
-                col = expensesCol;
-                dataToUpdate = { amount: parseFormattedNumber(form.elements.amount.value), description: form.elements.description.value, date: new Date(form.elements.date.value), categoryId: form.elements.categoryId?.value || '' };
-            } else return;
-            
-            await updateDoc(doc(col, id), dataToUpdate);
-            
-            if (type === 'expense') {
-                 const q = query(billsCol, where("expenseId", "==", id));
-                 const billSnap = await getDocs(q);
-                 if (!billSnap.empty) {
-                     const billRef = billSnap.docs[0].ref;
-                     await updateDoc(billRef, { amount: dataToUpdate.amount, description: dataToUpdate.description, dueDate: dataToUpdate.date });
-                 }
-            }
-            await _logActivity(`Memperbarui Data: ${type}`, { docId: id, description: dataToUpdate.description || dataToUpdate.amount });
-
-            toast('success', 'Data berhasil diperbarui.');
-            if (appState.activePage === 'pemasukan') await _rerenderPemasukanList(appState.activeSubPage.get('pemasukan'));
-            if (appState.activePage === 'pengeluaran') await _rerenderPengeluaranList(appState.activeSubPage.get('pengeluaran'));
-            if (appState.activePage === 'tagihan') renderTagihanPage();
-        } catch (error) {
-            toast('error', 'Gagal memperbarui data.');
-            console.error('Update error:', error);
-        }
-    }
-    
 // [FUNGSI BARU] Halaman Stok yang telah dirombak
 async function renderStokPage() {
     const container = $('.page-container');
@@ -3553,57 +3713,60 @@ async function _renderRiwayatStokView(container) {
         `;
     }
 
-    function _addInvoiceItemRow() {
-        const container = $('#invoice-items-container');
-        if (!container) return;
-        const index = container.children.length;
-        const itemHTML = `
-            <div class="invoice-item-row" data-index="${index}">
-                <input type="text" name="itemName" placeholder="Nama Barang" class="item-name" required>
-                <div class="item-details">
-                    <input type="text" inputmode="numeric" name="itemPrice" placeholder="Harga" class="item-price" required>
-                    <span>x</span>
-                    <input type="number" name="itemQty" placeholder="Qty" class="item-qty" value="1" required>
-                </div>
-                <span class="item-total">Rp 0</span>
-                <button type="button" class="btn-icon btn-icon-danger remove-item-btn"><span class="material-symbols-outlined">delete</span></button>
+// GANTI FUNGSI INI
+function _addInvoiceItemRow(context = document) {
+    const container = $('#invoice-items-container', context);
+    if (!container) return;
+    const index = container.children.length;
+    const itemHTML = `
+        <div class="invoice-item-row" data-index="${index}">
+            <input type="text" name="itemName" placeholder="Nama Barang" class="item-name" required>
+            <div class="item-details">
+                <input type="text" inputmode="numeric" name="itemPrice" placeholder="Harga" class="item-price" required>
+                <span>x</span>
+                <input type="number" name="itemQty" placeholder="Qty" class="item-qty" value="1" required>
             </div>
-        `;
-        container.insertAdjacentHTML('beforeend', itemHTML);
-        const newRow = container.lastElementChild;
-        newRow.querySelector('.remove-item-btn').addEventListener('click', () => {
-            newRow.remove();
-            _updateInvoiceTotal();
-        });
-        newRow.querySelectorAll('input[inputmode="numeric"]').forEach(input => {
-            input.addEventListener('input', _formatNumberInput);
-        });
-    }
-    
-    function _handleInvoiceItemChange(e) {
-        if (!e.target.matches('.item-price, .item-qty')) return;
+            <span class="item-total">Rp 0</span>
+            <button type="button" class="btn-icon btn-icon-danger remove-item-btn"><span class="material-symbols-outlined">delete</span></button>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', itemHTML);
+    const newRow = container.lastElementChild;
+    newRow.querySelector('.remove-item-btn').addEventListener('click', () => {
+        newRow.remove();
+        _updateInvoiceTotal(context);
+    });
+    newRow.querySelectorAll('input[inputmode="numeric"]').forEach(input => {
+        input.addEventListener('input', _formatNumberInput);
+    });
+}
 
-        const row = e.target.closest('.invoice-item-row');
+// GANTI FUNGSI INI
+function _handleInvoiceItemChange(e, context = document) {
+    if (!e.target.matches('.item-price, .item-qty')) return;
+
+    const row = e.target.closest('.invoice-item-row');
+    const price = parseFormattedNumber(row.querySelector('.item-price').value);
+    const qty = Number(row.querySelector('.item-qty').value);
+    const totalEl = row.querySelector('.item-total');
+
+    const total = price * qty;
+    totalEl.textContent = fmtIDR(total);
+
+    _updateInvoiceTotal(context);
+}
+
+// GANTI FUNGSI INI
+function _updateInvoiceTotal(context = document) {
+    let totalAmount = 0;
+    $$('.invoice-item-row', context).forEach(row => {
         const price = parseFormattedNumber(row.querySelector('.item-price').value);
         const qty = Number(row.querySelector('.item-qty').value);
-        const totalEl = row.querySelector('.item-total');
+        totalAmount += price * qty;
+    });
+    $('#invoice-total-amount', context).textContent = fmtIDR(totalAmount);
+}
 
-        const total = price * qty;
-        totalEl.textContent = fmtIDR(total);
-
-        _updateInvoiceTotal();
-    }
-
-    function _updateInvoiceTotal() {
-        let totalAmount = 0;
-        $$('.invoice-item-row').forEach(row => {
-            const price = parseFormattedNumber(row.querySelector('.item-price').value);
-            const qty = Number(row.querySelector('.item-qty').value);
-            totalAmount += price * qty;
-        });
-        $('#invoice-total-amount').textContent = fmtIDR(totalAmount);
-    }
-    
     async function _uploadFileToCloudinary(file) {
         // Ganti nilai di bawah ini dengan informasi dari akun Cloudinary Anda
         const CLOUDINARY_CLOUD_NAME = "dcjp0fxvb"; // <-- GANTI DENGAN CLOUD NAME ANDA
@@ -4029,16 +4192,25 @@ function init() {
                     return;
                 }
                 const actions = [];
+                // Selalu tambahkan opsi lihat detail untuk semua tipe tagihan
                 actions.push({ label: 'Lihat Detail Lengkap', action: 'open-bill-detail', icon: 'visibility', id, type: 'bill', expenseId });
+
+                // Opsi jika statusnya "Belum Lunas"
                 if (bill.status === 'unpaid') {
                     actions.push({ label: 'Bayar Cicilan', action: 'pay-bill', icon: 'payment', id, type: 'bill' });
                 }
-                if (bill.expenseId) {
-                    actions.push({ label: 'Edit', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
+                
+                // Opsi spesifik berdasarkan TIPE tagihan
+                if (bill.expenseId) { // Ini adalah tagihan dari pengeluaran (material, operasional, dll)
+                    actions.push({ label: 'Edit Faktur', action: 'edit-item', icon: 'edit', id: bill.expenseId, type: 'expense' });
                     actions.push({ label: 'Hapus', action: 'delete-item', icon: 'delete', id: bill.expenseId, type: 'expense' });
                 } else if (bill.type === 'gaji') {
                     actions.push({ label: 'Hapus Tagihan', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
+                } else if (bill.type === 'fee') { // [LOGIKA BARU DITAMBAHKAN DI SINI]
+                    actions.push({ label: 'Edit Tagihan Fee', action: 'edit-item', icon: 'edit', id: bill.id, type: 'bill' });
+                    actions.push({ label: 'Hapus Tagihan Fee', action: 'delete-item', icon: 'delete', id: bill.id, type: 'bill' });
                 }
+
                 createModal('billActionsModal', { bill, actions });
                 break;
             }
